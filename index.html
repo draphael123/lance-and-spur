@@ -178,18 +178,14 @@
   </div>
   <div class="trackSel" id="modeSel" style="margin-bottom:2px">
     <div class="trackCard modeCard selected" data-mode="single"><div class="tname">Single Race</div><div class="tblurb">One race on the track you choose</div></div>
-    <div class="trackCard modeCard" data-mode="gp"><div class="tname">Grand Prix</div><div class="tblurb">All four tracks · a points championship</div></div>
+    <div class="trackCard modeCard" data-mode="gp"><div class="tname">Grand Prix</div><div class="tblurb">Run a whole cup · a points championship</div></div>
   </div>
-  <div class="trackSel" id="trackSel">
-    <div class="trackCard selected" data-track="0"><div class="tname">Tourney Green</div><div class="tblurb">Flat festival meadow — wide, fast &amp; forgiving</div></div>
-    <div class="trackCard" data-track="1"><div class="tname">Highland Run</div><div class="tblurb">Long rolling hills, tight S-bends &amp; a windmill</div></div>
-    <div class="trackCard" data-track="2"><div class="tname">Rivermeadow</div><div class="tblurb">Flowing water meadow — a stone bridge, a splashing ford &amp; a watermill</div></div>
-    <div class="trackCard" data-track="3"><div class="tname">Highmoor Crag</div><div class="tblurb">A hard hill-climb to a clifftop fort, a fast descent &amp; a gorge bridge</div></div>
-    <div class="trackCard" data-track="4"><div class="tname">Frostfair Flats ❄</div><div class="tblurb">Midwinter fair on a frozen lake — wide, fast &amp; glass-slick ice</div></div>
-    <div class="trackCard" data-track="5"><div class="tname">Pinehollow Pass ❄</div><div class="tblurb">Snowbound pines, tight S-bends &amp; a sweeping avalanche</div></div>
-    <div class="trackCard" data-track="6"><div class="tname">Glasmere Crossing ❄</div><div class="tblurb">A frozen river — a cracking thin-ice ford &amp; an ice bridge below a frozen falls</div></div>
-    <div class="trackCard" data-track="7"><div class="tname">Wyrmspire ❄</div><div class="tblurb">A glacier climb to an ice citadel, a luge descent &amp; a crevasse bridge</div></div>
+  <div class="trackSel" id="cupSel" style="margin-bottom:2px">
+    <div class="trackCard cupCard selected" data-cup="0"><div class="tname">🌳 Greenwood Cup</div><div class="tblurb">Meadow, moor, river &amp; crag</div></div>
+    <div class="trackCard cupCard" data-cup="1"><div class="tname">❄️ Frostmere Cup</div><div class="tblurb">The frozen northern circuit</div></div>
   </div>
+  <div class="trackSel" id="trackSel"></div>
+  <div id="gpHint" style="display:none;font-size:13px;opacity:.7;margin:4px 0 8px">Grand Prix · 4 races across the selected cup</div>
   <div class="btnRow">
     <button class="btn" id="startBtn">RIDE</button>
     <button class="btn btn2" id="settingsBtn">⚙ SETTINGS</button>
@@ -252,7 +248,10 @@
   <div id="finishBoard"></div>
   <div id="gpStandings"></div>
   <p id="finishSub"></p>
-  <button class="btn" id="againBtn">RIDE AGAIN</button>
+  <div class="btnRow">
+    <button class="btn" id="againBtn">RIDE AGAIN</button>
+    <button class="btn btn2" id="menuBtn">⌂ MAIN MENU</button>
+  </div>
 </div>
 
 <script type="importmap">
@@ -2964,30 +2963,45 @@ function syncSettingsUI(){
 
 el('startBtn').onclick=()=>{ Audio.resume(); if(raceMode==='gp') startGrandPrix(); else startRace(); };
 el('againBtn').onclick=()=>handleAgain();
+el('menuBtn').onclick=()=>{ gpActive=false; backToMenu(); };
 el('settingsBtn').onclick=()=>openSettings('start');
 el('setBack').onclick=closeSettings;
 
+// cups group the eight tracks into two championships
+const CUPS=[ {name:'Greenwood Cup', tracks:[0,1,2,3]}, {name:'Frostmere Cup', tracks:[4,5,6,7]} ];
+let selectedCup=0;
+function renderTracks(){
+  const cont=el('trackSel'); cont.innerHTML='';
+  for(const i of CUPS[selectedCup].tracks){ const t=TRACKS[i];
+    const d=document.createElement('div'); d.className='trackCard'+(i===selectedTrack?' selected':''); d.dataset.track=i;
+    const nm=document.createElement('div'); nm.className='tname'; nm.textContent=t.name;
+    const bl=document.createElement('div'); bl.className='tblurb'; bl.textContent=t.blurb;
+    d.appendChild(nm); d.appendChild(bl);
+    d.onclick=()=>{ selectedTrack=i; renderTracks(); buildWorld(selectedTrack); };
+    cont.appendChild(d); }
+}
 // mode selector (single race vs grand prix)
 document.querySelectorAll('#modeSel .modeCard').forEach(card=>card.onclick=()=>{
   raceMode=card.dataset.mode;
   document.querySelectorAll('#modeSel .modeCard').forEach(c=>c.classList.toggle('selected', c===card));
-  el('trackSel').style.display = raceMode==='gp' ? 'none' : '';
+  const gp=raceMode==='gp';
+  el('trackSel').style.display = gp?'none':''; el('gpHint').style.display = gp?'':'none';
 });
-
-// track selector (single-race only)
-document.querySelectorAll('#trackSel .trackCard').forEach(card=>card.onclick=()=>{
-  selectedTrack=+card.dataset.track;
-  document.querySelectorAll('#trackSel .trackCard').forEach(c=>c.classList.toggle('selected', c===card));
-  buildWorld(selectedTrack);   // refresh the menu backdrop to the chosen track
+// cup selector
+document.querySelectorAll('#cupSel .cupCard').forEach(card=>card.onclick=()=>{
+  selectedCup=+card.dataset.cup;
+  document.querySelectorAll('#cupSel .cupCard').forEach(c=>c.classList.toggle('selected', c===card));
+  selectedTrack=CUPS[selectedCup].tracks[0]; renderTracks(); buildWorld(selectedTrack);
 });
+renderTracks();
 
-function startGrandPrix(){ gpActive=true; gpRound=0; gpPoints=new Array(NUM).fill(0); selectedTrack=gpOrder[0]; startRace(); }
+function startGrandPrix(){ gpActive=true; gpRound=0; gpOrder=CUPS[selectedCup].tracks.slice(); gpPoints=new Array(NUM).fill(0); selectedTrack=gpOrder[0]; startRace(); }
 function handleAgain(){ el('finish').classList.add('hidden');
   if(!gpActive){ startRace(); return; }
   if(gpRound < gpOrder.length-1){ gpRound++; selectedTrack=gpOrder[gpRound]; startRace(); }
   else { gpActive=false; backToMenu(); }
 }
-function backToMenu(){ state='menu'; el('hud').classList.add('hidden'); el('finish').classList.add('hidden'); el('start').classList.remove('hidden'); buildWorld(selectedTrack); }
+function backToMenu(){ gpActive=false; state='menu'; el('hud').classList.add('hidden'); el('finish').classList.add('hidden'); el('start').classList.remove('hidden'); buildWorld(selectedTrack); }
 
 // settings inputs — each updates SETTINGS, applies live, and persists
 const onR=(id,val,fn)=>{ el(id).oninput=e=>{ fn(+e.target.value); if(val) el(val).textContent=e.target.value; saveSettings(); }; };
