@@ -320,6 +320,10 @@ for(let i=0;i<10;i++){
   rays.scale.setScalar(640); rays.position.copy(SUN_DIR).multiplyScalar(1280); rays.renderOrder=-2; scene.add(rays);
 })();
 
+// --- soft sprites reused by river mist & Highmoor dust devils ---
+const mistTex=discTexture('rgba(255,255,255,0.85)','rgba(245,250,255,0.28)');
+const dustDevilTex=discTexture('rgba(208,188,150,0.85)','rgba(196,176,138,0.16)');
+
 // --- drifting motes/petals near the camera ---
 const motes=[]; const moteTex=discTexture('rgba(255,250,235,0.9)','rgba(255,240,200,0.25)');
 for(let i=0;i<46;i++){
@@ -406,9 +410,10 @@ const SETTINGS={ master:0.8, music:0.55, sfx:0.9, shake:true, quality:'high', mi
 // ---------- per-track state (reassigned by buildWorld) ----------
 let curve, waypoints, tangents, N=260, ROAD_W=26, HALF_W=13;
 let curTrack=null, W=null, obstacles=[], windmills=[], crowds=[], birds=[], flames=[], swayers=[], butterflies=[], crowdSpots=[];
+let mists=[], dustDevils=[], wheelSpots=[];   // river mist, Highmoor dust devils, watermill audio emitters
 let worldTime=0;
 const fxShaders=[];   // compiled shaders carrying a uTime uniform (animated water + wind-swept grass)
-const _viewSun=new THREE.Vector3();
+const _viewSun=new THREE.Vector3(), _camFwd=new THREE.Vector3();
 const WALL_INNER=3.0, RIDER_RAD=0.85;     // wall inner face = HALF_W+WALL_INNER; collision clamp leaves RIDER_RAD gap
 function terrainHeight(x,z){ return curTrack ? curTrack.height(x,z) : 0; }
 // shared stone texture for the rampart wall (with mossy patches)
@@ -609,7 +614,7 @@ function disposeObj(o){ o.traverse(n=>{ if(n.geometry)n.geometry.dispose();
 
 function buildWorld(idx){
   if(W){ scene.remove(W); disposeObj(W); }
-  W=new THREE.Group(); scene.add(W); obstacles=[]; windmills=[]; crowds=[]; birds=[]; flames=[]; swayers=[]; butterflies=[]; crowdSpots=[]; fxShaders.length=0;
+  W=new THREE.Group(); scene.add(W); obstacles=[]; windmills=[]; crowds=[]; birds=[]; flames=[]; swayers=[]; butterflies=[]; crowdSpots=[]; mists=[]; dustDevils=[]; wheelSpots=[]; fxShaders.length=0;
   curTrack=TRACKS[idx]; ROAD_W=curTrack.roadW; HALF_W=ROAD_W/2; N=260;
   skyMat.uniforms.top.value.set(curTrack.sky.top); skyMat.uniforms.mid.value.set(curTrack.sky.mid); skyMat.uniforms.bot.value.set(curTrack.sky.bot);
   scene.fog.color.set(curTrack.fog.c); scene.fog.near=curTrack.fog.near; scene.fog.far=curTrack.fog.far;
@@ -1147,6 +1152,20 @@ function buildRiverMesh(){
   for(let i=0;i<8;i++){ const u=0.1+Math.random()*0.8; const p=rc.getPointAt(u); const s=new THREE.Sprite(new THREE.SpriteMaterial({map:butterflyTex,transparent:true,depthWrite:false}));
     s.scale.setScalar(1.4+Math.random()*0.7); W.add(s);
     butterflies.push({s, cx:p.x, cz:p.z, baseY:riverSurfaceY(p.x,p.z)+3, ph:Math.random()*6.28, r:3+Math.random()*5, sp:0.6+Math.random()*0.7}); }
+  // floating lily pads (some in bloom) resting on the surface, off the racing lane
+  const padMat=new THREE.MeshStandardMaterial({color:0x4c8a3a, roughness:.85, side:THREE.DoubleSide});
+  const lilyMat=new THREE.MeshStandardMaterial({color:0xff7fae, emissive:0x551126, emissiveIntensity:0.25, roughness:.6});
+  for(let i=0;i<26;i++){ const u=Math.random(); const p=rc.getPointAt(u); const t=rc.getTangentAt(u); const n=new THREE.Vector3(-t.z,0,t.x).normalize();
+    const sgn=Math.random()<.5?1:-1; const px=p.x+n.x*sgn*(Math.random()*half*0.78), pz=p.z+n.z*sgn*(Math.random()*half*0.78);
+    if(distToTrack(px,pz)<HALF_W) continue; const wy=riverSurfaceY(px,pz);
+    const pr=0.7+Math.random()*1.0; const pg=new THREE.CircleGeometry(pr,12); pg.rotateX(-Math.PI/2);
+    const pad=new THREE.Mesh(pg,padMat); pad.position.set(px,wy+0.05,pz); pad.rotation.y=Math.random()*6; W.add(pad);
+    if(Math.random()<0.35){ const fl=new THREE.Mesh(new THREE.SphereGeometry(0.22,7,5),lilyMat); fl.scale.y=0.6; fl.position.set(px,wy+0.18,pz); W.add(fl); } }
+  // low river mist: soft horizontal sheets hugging the water (animated in step)
+  for(let i=0;i<7;i++){ const u=Math.random(); const p=rc.getPointAt(u);
+    const m=new THREE.Mesh(new THREE.PlaneGeometry(44,44), new THREE.MeshBasicMaterial({map:mistTex, transparent:true, opacity:0, depthWrite:false}));
+    m.rotation.x=-Math.PI/2; m.position.set(p.x+(Math.random()-.5)*22, riverSurfaceY(p.x,p.z)+1.7, p.z+(Math.random()-.5)*22); W.add(m);
+    mists.push({m, baseO:0.16+Math.random()*0.12, ph:Math.random()*6.28, drift:(Math.random()-.5)*1.0, x0:m.position.x}); }
 }
 // drooping willow, planted on the river banks
 function buildWillow(x,z){ const g=new THREE.Group(); const y=terrainHeight(x,z);
@@ -1172,6 +1191,7 @@ function buildWatermill(x,z){ const g=new THREE.Group(); const y=terrainHeight(x
   g.add(wheel); windmills.push({node:wheel, speed:0.7});
   g.position.set(x,y,z); g.rotation.y=Math.atan2(-x,-z); g.traverse(o=>{o.castShadow=true;}); W.add(g);
   obstacles.push({type:'circle',x,z,r:7,slow:0.4});
+  wheelSpots.push({x, y:y+3, z});   // positional water-wheel splash/creak
 }
 // stone arch bridge carrying the lane across the river
 function buildStoneBridge(idx){
@@ -1226,11 +1246,20 @@ function buildGorgeBridge(idx){
   for(const a of [-1,1]){ const px=p0.x+t0.x*a*span*3.0, pz=p0.z+t0.z*a*span*3.0;
     const pier=new THREE.Mesh(new THREE.BoxGeometry(5,h,6), stone); pier.position.set(px,deckY-1.0-h/2,pz); pier.rotation.y=Math.atan2(t0.x,t0.z); pier.castShadow=true; W.add(pier); }
 }
+// swirling dust devils that wander the open crag, away from the lane
+function buildDustDevils(){
+  for(let i=0;i<4;i++){ const grp=new THREE.Group(); const sprites=[];
+    let cx=0,cz=0,guard=0; do{ cx=(Math.random()-.5)*700; cz=(Math.random()-.5)*700; guard++; } while(distToTrack(cx,cz)<HALF_W+24 && guard<50);
+    for(let k=0;k<8;k++){ const s=new THREE.Sprite(new THREE.SpriteMaterial({map:dustDevilTex,transparent:true,opacity:0,depthWrite:false}));
+      s.scale.setScalar(2.4+k*0.55); grp.add(s); sprites.push({s, baseY:2+k*2.1, rad:1.4+k*0.62, aoff:Math.random()*6.28, sp:2.8-k*0.12}); }
+    W.add(grp); dustDevils.push({cx, cz, vx:(Math.random()-.5)*6, vz:(Math.random()-.5)*6, sprites}); }
+}
 function buildHighmoorLandmarks(){
   buildClifftopFort(300,-285);
   let bi=-1, best=1e9; for(let i=0;i<N;i++){ const w=waypoints[i]; if(w.x<0 && highmoorChasm(w.x,w.z)>20){ const d=Math.abs(w.z-90); if(d<best){best=d;bi=i;} } }
   if(bi<0) for(let i=0;i<N;i++){ const w=waypoints[i]; if(highmoorChasm(w.x,w.z)>10){ bi=i; break; } }
   if(bi>=0) buildGorgeBridge(bi);
+  buildDustDevils();
 }
 
 buildWorld(0);   // build a backdrop for the menu
@@ -1644,8 +1673,30 @@ const Audio = (()=>{
     // slow LFO breathes the wind filter so it never sits still
     const lfo=ctx.createOscillator(), lg=ctx.createGain(); lfo.frequency.value=0.08; lg.gain.value=180;
     lfo.connect(lg); lg.connect(amb.wind.f.frequency); lfo.start(); amb.nodes.push(lfo,lg);
+    // positional emitters: crackling braziers + the turning watermill wheel
+    clearPositional();
+    for(const fl of flames){ fl.a.getWorldPosition(_av); addFire(_av.x,_av.y,_av.z); }
+    for(const w of wheelSpots) addWheel(w.x,w.y,w.z);
   }
-  function stopAmbient(){ if(!amb) return; for(const n of amb.nodes){ try{n.stop&&n.stop();}catch(e){} try{n.disconnect();}catch(e){} } amb=null; }
+  function stopAmbient(){ clearPositional(); if(!amb) return; for(const n of amb.nodes){ try{n.stop&&n.stop();}catch(e){} try{n.disconnect();}catch(e){} } amb=null; }
+
+  // ---------- positional (3D) audio: braziers, watermill ----------
+  const _av=new THREE.Vector3(); let posNodes=[];
+  function mkPanner(x,y,z){ const p=ctx.createPanner(); p.panningModel='HRTF'; p.distanceModel='inverse'; p.refDistance=10; p.maxDistance=180; p.rolloffFactor=1.3;
+    if(p.positionX){ p.positionX.value=x; p.positionY.value=y; p.positionZ.value=z; } else p.setPosition(x,y,z); return p; }
+  function addFire(x,y,z){ if(!ctx) return; const p=mkPanner(x,y,z), s=makeNoiseSrc(), f=ctx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=900; f.Q.value=0.6;
+    const g=ctx.createGain(); g.gain.value=0.32; s.connect(f); f.connect(g); g.connect(p); p.connect(ambGain); s.start();
+    const lfo=ctx.createOscillator(); lfo.type='triangle'; lfo.frequency.value=7; const lg=ctx.createGain(); lg.gain.value=0.14; lfo.connect(lg); lg.connect(g.gain); lfo.start();   // flicker → crackle
+    posNodes.push(s,f,g,p,lfo,lg); }
+  function addWheel(x,y,z){ if(!ctx) return; const p=mkPanner(x,y,z), s=makeNoiseSrc(), f=ctx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=540; f.Q.value=0.8;
+    const g=ctx.createGain(); g.gain.value=0.4; s.connect(f); f.connect(g); g.connect(p); p.connect(ambGain); s.start();
+    const lfo=ctx.createOscillator(); lfo.type='sine'; lfo.frequency.value=1.1; const lg=ctx.createGain(); lg.gain.value=0.22; lfo.connect(lg); lg.connect(g.gain); lfo.start();   // slow splash/creak
+    posNodes.push(s,f,g,p,lfo,lg); }
+  function clearPositional(){ if(!ctx) return; for(const n of posNodes){ try{n.stop&&n.stop();}catch(e){} try{n.disconnect();}catch(e){} } posNodes=[]; }
+  function setListener(px,py,pz, fx,fy,fz){ if(!ctx) return; const L=ctx.listener, t=ctx.currentTime;
+    if(L.positionX){ L.positionX.setTargetAtTime(px,t,0.02); L.positionY.setTargetAtTime(py,t,0.02); L.positionZ.setTargetAtTime(pz,t,0.02);
+      L.forwardX.setTargetAtTime(fx,t,0.02); L.forwardY.setTargetAtTime(fy,t,0.02); L.forwardZ.setTargetAtTime(fz,t,0.02); L.upX.value=0; L.upY.value=1; L.upZ.value=0; }
+    else if(L.setPosition){ L.setPosition(px,py,pz); L.setOrientation(fx,fy,fz,0,1,0); } }
   function setEngine(spd, mx, boosting){ if(!ctx||!amb) return; const t=ctx.currentTime, f=Math.max(0,Math.min(1,spd/mx));
     amb.speedWind.g.gain.setTargetAtTime(f*f*(boosting?0.22:0.12), t, 0.1);
     amb.speedWind.f.frequency.setTargetAtTime(700+f*1400+(boosting?500:0), t, 0.1);
@@ -1683,7 +1734,7 @@ const Audio = (()=>{
   function stopMusic(){ if(sched){ clearInterval(sched); sched=null; } }
   function setIntensity(x){ intensity=Math.max(0,Math.min(1,x)); }
 
-  return { resume, applyVolumes, startMusic, stopMusic, sfx, startAmbient, stopAmbient, setEngine, setCrowd, boostWhoosh, setIntensity };
+  return { resume, applyVolumes, startMusic, stopMusic, sfx, startAmbient, stopAmbient, setEngine, setCrowd, boostWhoosh, setIntensity, setListener };
 })();
 
 function startRace(){
@@ -2205,6 +2256,7 @@ function step(dt){
   if(state!=='menu'){
     for(const r of racers) updateRacer(r,dt);
     updateCamera(dt);
+    if(state==='race'){ camera.getWorldDirection(_camFwd); Audio.setListener(camera.position.x,camera.position.y,camera.position.z,_camFwd.x,_camFwd.y,_camFwd.z); }
     updateHUD();
     tickHudTimers(dt);
   }
@@ -2228,6 +2280,15 @@ function step(dt){
     for(const sh of fxShaders){ sh.uniforms.uTime.value=worldTime; if(sh.uniforms.uSun) sh.uniforms.uSun.value.copy(_viewSun); } }
   for(const bf of butterflies){ const a=worldTime*bf.sp+bf.ph;
     bf.s.position.set(bf.cx+Math.cos(a)*bf.r+Math.sin(a*2.3)*1.4, bf.baseY+Math.sin(a*3)*0.8, bf.cz+Math.sin(a)*bf.r+Math.cos(a*1.7)*1.4); }
+  // river mist drifts and breathes; dust devils wander the crag
+  for(const mt of mists){ mt.m.material.opacity=mt.baseO*(0.55+0.45*Math.sin(worldTime*0.5+mt.ph));
+    mt.m.position.x=mt.x0+Math.sin(worldTime*0.18+mt.ph)*10; }
+  for(const dd of dustDevils){ dd.cx+=dd.vx*dt; dd.cz+=dd.vz*dt;
+    if(Math.abs(dd.cx)>700||Math.abs(dd.cz)>700||distToTrack(dd.cx,dd.cz)<HALF_W+14){ dd.vx=-dd.vx; dd.vz=-dd.vz; dd.cx+=dd.vx*dt*2; dd.cz+=dd.vz*dt*2; }
+    const by=terrainHeight(dd.cx,dd.cz);
+    for(const sp of dd.sprites){ const a=worldTime*sp.sp+sp.aoff;
+      sp.s.position.set(dd.cx+Math.cos(a)*sp.rad, by+sp.baseY, dd.cz+Math.sin(a)*sp.rad);
+      sp.s.material.opacity=0.26*(0.55+0.45*Math.sin(worldTime*1.4+sp.aoff)); } }
   // gentle crowd wave
   for(const cw of crowds){ const inf=cw.info, dm=cw.dummy;
     for(let k=0;k<inf.length;k++){ const b=inf[k]; const yy=b.y+Math.sin(worldTime*2.3+b.ph)*0.18;
