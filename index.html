@@ -588,7 +588,8 @@ const BUNT_COLS=[0xe23b2e,0x2f7fd0,0x37b85e,0xe0b21f,0x9a3bd0,0xee7722];
 let curve, waypoints, tangents, N=260, ROAD_W=26, HALF_W=13;
 let curTrack=null, W=null, obstacles=[], windmills=[], crowds=[], birds=[], flames=[], swayers=[], butterflies=[], crowdSpots=[];
 let mists=[], dustDevils=[], wheelSpots=[];   // river mist, Highmoor dust devils, watermill audio emitters
-let breakables=[], movers=[];                 // smashable props, roaming hazards
+let breakables=[], movers=[], projectiles=[]; // smashable props, roaming hazards, lobbed snowballs
+let _fwT=0, _sbT=0;                            // firework / snowball timers
 let worldTime=0;
 const fxShaders=[];   // compiled shaders carrying a uTime uniform (animated water + wind-swept grass)
 const _viewSun=new THREE.Vector3(), _camFwd=new THREE.Vector3();
@@ -756,7 +757,7 @@ const TRACKS=[
  { name:'Tourney Green', blurb:'Flat festival meadow — wide, fast & forgiving', roadW:26,
    ctrl:[[0,-300],[190,-240],[300,-60],[270,120],[140,270],[-60,300],[-240,220],[-320,40],[-260,-160],[-110,-280]],
    sky:{top:'#2f7bd6',mid:'#bfe2f5',bot:'#ffe9c2'}, fog:{c:'#f3e2bd',near:340,far:1120},
-   ground:0xeaf2dc, height:(x,z)=>0, grandstands:[20,110,190], landmarks:buildGreenLandmarks, shortcut:true },
+   ground:0xeaf2dc, theme:'meadow', fireworks:true, height:(x,z)=>0, grandstands:[20,110,190], landmarks:buildGreenLandmarks, shortcut:true },
  { name:'Highland Run', blurb:'Long rolling hills, tight S-bends & a windmill', roadW:24,
    ctrl:[[0,-340],[170,-316],[240,-192],[156,-96],[300,-4],[240,144],[104,184],[168,304],[-44,324],[-192,248],[-132,104],[-304,64],[-336,-104],[-208,-236],[-92,-304]],
    sky:{top:'#3f86c8',mid:'#cfe6e0',bot:'#eef0d0'}, fog:{c:'#dde9cf',near:300,far:1040},
@@ -768,7 +769,7 @@ const TRACKS=[
  { name:'Rivermeadow', blurb:'Flowing water meadow — a stone bridge, a splashing ford & a watermill', roadW:26,
    ctrl:[[0,-330],[150,-300],[260,-190],[300,-50],[260,90],[300,210],[190,300],[30,330],[-140,300],[-260,200],[-330,60],[-300,-90],[-200,-220],[-70,-310]],
    sky:{top:'#2a86e0',mid:'#cdebf6',bot:'#f1f6dd'}, fog:{c:'#dfeed8',near:340,far:1120},
-   ground:0xe4efce, river:true, grandstands:[18,120,210], landmarks:buildRivermeadowLandmarks,
+   ground:0xdcedc4, theme:'water', current:true, river:true, grandstands:[18,120,210], landmarks:buildRivermeadowLandmarks,
    height:(x,z)=>{ let h=Math.sin(x*0.004+0.3)*2 + Math.cos(z*0.0045-0.2)*1.8;
      const d=riverDist(x,z); let dip=4.0*Math.exp(-(d*d)/520);         // shallow river channel
      const b=curTrack&&curTrack._bridgeXZ;
@@ -823,7 +824,7 @@ function disposeObj(o){ o.traverse(n=>{ if(n.geometry)n.geometry.dispose();
 
 function buildWorld(idx){
   if(W){ scene.remove(W); disposeObj(W); }
-  W=new THREE.Group(); scene.add(W); obstacles=[]; windmills=[]; crowds=[]; birds=[]; flames=[]; swayers=[]; butterflies=[]; crowdSpots=[]; mists=[]; dustDevils=[]; wheelSpots=[]; breakables=[]; movers=[]; fxShaders.length=0;
+  W=new THREE.Group(); scene.add(W); obstacles=[]; windmills=[]; crowds=[]; birds=[]; flames=[]; swayers=[]; butterflies=[]; crowdSpots=[]; mists=[]; dustDevils=[]; wheelSpots=[]; breakables=[]; movers=[]; projectiles=[]; fxShaders.length=0;
   curTrack=TRACKS[idx]; ROAD_W=curTrack.roadW; HALF_W=ROAD_W/2; N=260;
   skyMat.uniforms.top.value.set(curTrack.sky.top); skyMat.uniforms.mid.value.set(curTrack.sky.mid); skyMat.uniforms.bot.value.set(curTrack.sky.bot);
   scene.fog.color.set(curTrack.fog.c); scene.fog.near=curTrack.fog.near; scene.fog.far=curTrack.fog.far;
@@ -857,6 +858,8 @@ function applyTimeOfDay(){
   if(th==='highland'){ grade.uniforms.warm.value=-0.018; grade.uniforms.sat.value=1.05; grade.uniforms.contrast.value=1.10; }
   else if(th==='winter'){ grade.uniforms.warm.value=-0.030; grade.uniforms.sat.value=1.02; grade.uniforms.contrast.value=1.04; }
   else if(th==='crag'){ grade.uniforms.warm.value=-0.012; grade.uniforms.sat.value=0.92; grade.uniforms.contrast.value=1.12; }
+  else if(th==='water'){ grade.uniforms.warm.value=0.030; grade.uniforms.sat.value=1.18; grade.uniforms.contrast.value=1.04; }   // soft golden wetland
+  else if(th==='meadow'){ grade.uniforms.warm.value=0.026; grade.uniforms.sat.value=1.20; grade.uniforms.contrast.value=1.08; } // bright festival
   else { grade.uniforms.warm.value=0.022; grade.uniforms.sat.value=1.14; grade.uniforms.contrast.value=1.07; }
   buildEnv(SETTINGS.timeOfDay);
 }
@@ -1158,6 +1161,13 @@ function buildNature(){
     for(let i=0;i<130;i++){ const x=(Math.random()-.5)*1100, z=(Math.random()-.5)*1100; if(distToTrack(x,z)<HALF_W+4) continue;
       const r=0.8+Math.random()*1.9; const mound=new THREE.Mesh(new THREE.SphereGeometry(r,7,6),snowMat); mound.scale.y=0.38; mound.position.set(x,terrainHeight(x,z)+r*0.08,z); mound.castShadow=true; W.add(mound); }
     for(let i=0;i<10;i++){ const x=(Math.random()-.5)*900, z=(Math.random()-.5)*900; if(distToTrack(x,z)<HALF_W+8) continue; buildSnowman(x,z); } }
+  if(th==='water'){   // cattail reeds dotting the wet meadow
+    const stalkMat=new THREE.MeshStandardMaterial({color:0x5a8a3a,roughness:1}), headMat=new THREE.MeshStandardMaterial({color:0x6b4a24,roughness:1});
+    for(let i=0;i<90;i++){ const x=(Math.random()-.5)*900, z=(Math.random()-.5)*900; if(distToTrack(x,z)<HALF_W+5) continue;
+      const g=new THREE.Group(); const y=terrainHeight(x,z);
+      for(let k=0;k<4;k++){ const h=2.4+Math.random()*1.6; const st=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.08,h,4),stalkMat); st.position.set((Math.random()-.5)*1.2,h/2,(Math.random()-.5)*1.2); g.add(st);
+        const head=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,0.7,6),headMat); head.position.set(st.position.x,h,st.position.z); g.add(head); }
+      g.position.set(x,y,z); g.traverse(o=>{ if(o.isMesh)o.castShadow=true; }); W.add(g); } }
   const rockN=craggy?150:highland?56:26;
   for(let i=0;i<rockN;i++){ const x=(Math.random()-.5)*1150, z=(Math.random()-.5)*1150; if(distToTrack(x,z)<HALF_W+7) continue;
     const s=(craggy?1.6:moor?1.4:1)+Math.random()*(craggy?5:moor?4.2:3.2); const rk=new THREE.Mesh(new THREE.DodecahedronGeometry(s,0), rockMat);
@@ -1634,6 +1644,24 @@ function buildHighmoorLandmarks(){
   if(bi<0) for(let i=0;i<N;i++){ const w=waypoints[i]; if(highmoorChasm(w.x,w.z)>10){ bi=i; break; } }
   if(bi>=0) buildGorgeBridge(bi);
   buildDustDevils();
+  buildRockfall();
+}
+// a clutch of boulders that tumbles across the descent — time your run
+function buildRockfall(){
+  const idx=(N*0.2)|0; const p=waypoints[idx], t=tangents[idx]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
+  const g=new THREE.Group(); const stone=new THREE.MeshStandardMaterial({color:0x8a857c,roughness:1,flatShading:true});
+  for(let k=0;k<4;k++){ const s=1.5+Math.random()*1.4; const b=new THREE.Mesh(new THREE.DodecahedronGeometry(s,0),stone); b.position.set((Math.random()-.5)*5,s,(Math.random()-.5)*5); g.add(b); }
+  g.traverse(o=>{ if(o.isMesh)o.castShadow=true; }); W.add(g);
+  const obs={type:'circle',x:p.x,z:p.z,r:4.5,slow:0.25}; obstacles.push(obs);
+  movers.push({group:g, obs, cx:p.x, cz:p.z, nx:n.x, nz:n.z, span:HALF_W+11, ph:Math.random()*6.28, sp:0.85, slam:true, roll:true});
+}
+// a snowball lobbed from the stands toward the player's predicted position
+function lobSnowball(fromX,fromZ){ const pl=player(); if(!pl) return;
+  const fy=terrainHeight(fromX,fromZ)+10;
+  const mesh=new THREE.Mesh(new THREE.SphereGeometry(0.5,7,6), new THREE.MeshStandardMaterial({color:0xffffff,roughness:1})); mesh.position.set(fromX,fy,fromZ); mesh.castShadow=true; W.add(mesh);
+  const tx=pl.pos.x+Math.sin(pl.heading)*pl.speed*0.5, tz=pl.pos.z+Math.cos(pl.heading)*pl.speed*0.5, T=1.1;
+  const vx=(tx-fromX)/T, vz=(tz-fromZ)/T, vy=((terrainHeight(tx,tz)+1.5 - fy)/T) + 0.5*22*T;
+  projectiles.push({mesh, vx, vy, vz, x:fromX, y:fy, z:fromZ});
 }
 
 // ---------- the Frostmere Circuit (winter) landmarks ----------
@@ -2429,6 +2457,7 @@ function updateRacer(r,dt){
           else if(player()){ /* AI fell */ } }
       } else {
         r.speed -= r.speed*1.6*dt; if(r.speed>32) r.speed=32+(r.speed-32)*0.55;
+        if(curTrack.current){ const tt=tangents[ni]; r.pos.x += (-tt.z)*9*dt; r.pos.z += (tt.x)*9*dt; }   // the current shoves you downstream
         if(r.isPlayer){ if(r.speed>8 && Math.random()<0.6) Particles.spawnSplash(r.pos.x,r.pos.y,r.pos.z,1.1);
           if(r.speed>12 && Math.random()<0.05) Audio.sfx.splash(); }
       }
@@ -2851,6 +2880,24 @@ function step(dt){
   for(const mv of movers){ const o=Math.sin(worldTime*mv.sp+mv.ph)*mv.span;
     const x=mv.cx+mv.nx*o, z=mv.cz+mv.nz*o; mv.obs.x=x; mv.obs.z=z; mv.group.position.set(x, terrainHeight(x,z), z);
     if(mv.roll){ mv.group.rotation.x += dt*Math.cos(worldTime*mv.sp+mv.ph)*mv.sp*mv.span*0.12; } }
+  // living-level moments: fireworks over the festival, snowballs from the winter stands
+  if(curTrack && state==='race'){
+    if(curTrack.fireworks){ _fwT-=dt; if(_fwT<=0){ _fwT=1.5+Math.random()*1.6;
+      const cs=crowdSpots.length?crowdSpots[(Math.random()*crowdSpots.length)|0]:{x:0,z:0};
+      const fx=cs.x+(Math.random()-.5)*50, fz=cs.z+(Math.random()-.5)*50, fy=52+Math.random()*34;
+      const col=[0xff5a5a,0x5a9aff,0x5ad07a,0xffd24a,0xb46bff,0xff8c42][(Math.random()*6)|0];
+      Particles.spawnBurst(fx,fy,fz,col); Particles.spawnBurst(fx,fy,fz,0xfff0c0); } }
+    if(curTrack.theme==='winter' && crowdSpots.length){ _sbT-=dt; if(_sbT<=0){ _sbT=1.3+Math.random()*1.5;
+      const cs=crowdSpots[(Math.random()*crowdSpots.length)|0]; lobSnowball(cs.x,cs.z); } }
+  }
+  // snowball flight + impact (splash + a light stagger if it lands on you)
+  if(projectiles.length){ for(const pr of projectiles){ pr.vy-=22*dt; pr.x+=pr.vx*dt; pr.y+=pr.vy*dt; pr.z+=pr.vz*dt;
+      pr.mesh.position.set(pr.x,pr.y,pr.z); pr.mesh.rotation.x+=dt*6;
+      const gy=terrainHeight(pr.x,pr.z);
+      if(pr.y<=gy+0.3){ Particles.spawnSplash(pr.x,gy+0.2,pr.z,1.0); const pl=player();
+        if(pl && state==='race' && dist2D(pr.x,pr.z,pl.pos.x,pl.pos.z)<3.5){ pl.stun=Math.max(pl.stun,0.3); pl.tumble=0.3; pl.speed*=0.82; toast('❄ Snowball!'); }
+        W.remove(pr.mesh); pr.mesh.geometry.dispose(); pr.dead=true; } }
+    projectiles=projectiles.filter(p=>!p.dead); }
   // aurora curtains shimmer over Wyrmspire
   if(aurora.grp.visible){ for(const b of aurora.bands){ b.m.material.opacity=0.3+0.22*Math.sin(worldTime*0.5+b.ph); b.m.position.x=b.base+Math.sin(worldTime*0.2+b.ph)*45; } }
   // river mist drifts and breathes; dust devils wander the crag
