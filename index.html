@@ -411,6 +411,7 @@ const SETTINGS={ master:0.8, music:0.55, sfx:0.9, shake:true, quality:'high', mi
 let curve, waypoints, tangents, N=260, ROAD_W=26, HALF_W=13;
 let curTrack=null, W=null, obstacles=[], windmills=[], crowds=[], birds=[], flames=[], swayers=[], butterflies=[], crowdSpots=[];
 let mists=[], dustDevils=[], wheelSpots=[];   // river mist, Highmoor dust devils, watermill audio emitters
+let breakables=[], movers=[];                 // smashable props, roaming hazards
 let worldTime=0;
 const fxShaders=[];   // compiled shaders carrying a uTime uniform (animated water + wind-swept grass)
 const _viewSun=new THREE.Vector3(), _camFwd=new THREE.Vector3();
@@ -614,7 +615,7 @@ function disposeObj(o){ o.traverse(n=>{ if(n.geometry)n.geometry.dispose();
 
 function buildWorld(idx){
   if(W){ scene.remove(W); disposeObj(W); }
-  W=new THREE.Group(); scene.add(W); obstacles=[]; windmills=[]; crowds=[]; birds=[]; flames=[]; swayers=[]; butterflies=[]; crowdSpots=[]; mists=[]; dustDevils=[]; wheelSpots=[]; fxShaders.length=0;
+  W=new THREE.Group(); scene.add(W); obstacles=[]; windmills=[]; crowds=[]; birds=[]; flames=[]; swayers=[]; butterflies=[]; crowdSpots=[]; mists=[]; dustDevils=[]; wheelSpots=[]; breakables=[]; movers=[]; fxShaders.length=0;
   curTrack=TRACKS[idx]; ROAD_W=curTrack.roadW; HALF_W=ROAD_W/2; N=260;
   skyMat.uniforms.top.value.set(curTrack.sky.top); skyMat.uniforms.mid.value.set(curTrack.sky.mid); skyMat.uniforms.bot.value.set(curTrack.sky.bot);
   scene.fog.color.set(curTrack.fog.c); scene.fog.near=curTrack.fog.near; scene.fog.far=curTrack.fog.far;
@@ -627,7 +628,7 @@ function buildWorld(idx){
   buildMountains();
   buildGround(); buildRoadMesh(); buildStartLine(); buildWall(); buildWallShields(); buildDeco();
   if(curTrack.landmarks) curTrack.landmarks();
-  buildProps(); buildNature(); buildWater(); buildBirds();
+  buildProps(); buildNature(); buildWater(); buildBirds(); buildBreakables(); buildMovers();
   applyTimeOfDay();
 }
 // day / golden-sunset palette (overrides the track's sky after buildWorld)
@@ -942,6 +943,40 @@ function buildBirds(){
   for(let i=0;i<7;i++){ const s=new THREE.Sprite(new THREE.SpriteMaterial({map:birdTex,transparent:true,depthWrite:false}));
     s.scale.setScalar(6+Math.random()*4); W.add(s);
     birds.push({s, cx:(Math.random()-.5)*220, cz:(Math.random()-.5)*220, rad:110+Math.random()*170, h:80+Math.random()*70, ph:Math.random()*6.28, sp:0.10+Math.random()*0.12}); }
+}
+
+// smashable hay bales right at the lane edges — barrel through them (small scrub) or knock a rival into them
+function buildBreakables(){
+  const hayMat=new THREE.MeshStandardMaterial({color:0xd9b84a,roughness:1});
+  for(const sgn of [1,-1]) for(let k=0;k<7;k++){
+    const i=((k*37+17+(sgn>0?0:13))%N); const p=waypoints[i], t=tangents[i]; const n=new THREE.Vector3(-t.z,0,t.x).normalize().multiplyScalar(sgn);
+    const off=HALF_W-1.2+Math.random()*2.2; const x=p.x+n.x*off, z=p.z+n.z*off;
+    if(distToTrack(x,z)>HALF_W+2.6) continue;                        // keep inside the wall
+    const grp=new THREE.Group();
+    for(let b=0;b<2;b++){ const hb=new THREE.Mesh(new THREE.CylinderGeometry(1.25,1.25,2.3,9),hayMat); hb.rotation.z=Math.PI/2; hb.position.set((Math.random()-.5)*0.4,1.25+b*0.05,b*2.4); hb.castShadow=true; grp.add(hb); }
+    grp.position.set(x,terrainHeight(x,z),z); grp.rotation.y=Math.atan2(t.x,t.z); W.add(grp);
+    breakables.push({x, z, r:2.6, group:grp, broken:false});
+  }
+}
+// a stray ox-cart trundling back and forth across the lane — time your run through the gap
+function makeOxCart(){
+  const g=new THREE.Group();
+  const wood=new THREE.MeshStandardMaterial({color:0x7a4a24,roughness:.9, map:woodTex});
+  const hay=new THREE.MeshStandardMaterial({color:0xd9b84a,roughness:1});
+  const bed=new THREE.Mesh(new THREE.BoxGeometry(3.4,1.0,5.0),wood); bed.position.y=2.2; g.add(bed);
+  for(let b=0;b<3;b++){ const hb=new THREE.Mesh(new THREE.CylinderGeometry(0.9,0.9,3.0,8),hay); hb.rotation.z=Math.PI/2; hb.position.set(0,3.1,-1.4+b*1.4); g.add(hb); }
+  for(const sx of [-1.7,1.7]) for(const sz of [-1.9,1.9]){ const wh=new THREE.Mesh(new THREE.CylinderGeometry(1.0,1.0,0.4,12),new THREE.MeshStandardMaterial({color:0x4a3422,roughness:.85}));
+    wh.rotation.z=Math.PI/2; wh.position.set(sx,1.0,sz); g.add(wh); }
+  // a plodding ox up front
+  const ox=new THREE.Mesh(new THREE.CapsuleGeometry(0.9,2.0,5,9),new THREE.MeshStandardMaterial({color:0x6b5848,roughness:.9})); ox.rotation.z=Math.PI/2; ox.position.set(0,2.0,3.8); g.add(ox);
+  g.traverse(o=>{ if(o.isMesh) o.castShadow=true; });
+  return g;
+}
+function buildMovers(){
+  const idx=(N*0.32)|0; const p=waypoints[idx], t=tangents[idx]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
+  const cart=makeOxCart(); cart.rotation.y=Math.atan2(n.x,n.z); W.add(cart);
+  const obs={type:'circle', x:p.x, z:p.z, r:3.6, slow:0.35}; obstacles.push(obs);
+  movers.push({group:cart, obs, cx:p.x, cz:p.z, nx:n.x, nz:n.z, span:HALF_W+5, ph:Math.random()*6.28, sp:0.45});
 }
 
 function buildDeco(){
@@ -1647,6 +1682,7 @@ const Audio = (()=>{
     splash(){ noise(0.28,0.32,1600); blip(320,0.12,'sine',0.10); },
     boost(){ boostWhoosh(); },
     parry(){ blip(880,0.08,'square',0.16); blip(1320,0.13,'triangle',0.12); noise(0.12,0.18,3200); },
+    crash(){ noise(0.26,0.3,520); blip(120,0.12,'sawtooth',0.12); },
     fanfare(){ [523,659,784,1047,1319].forEach((f,i)=>setTimeout(()=>{ blip(f,0.55,'square',0.26); blip(f*1.5,0.5,'triangle',0.12); }, i*150)); },
   };
 
@@ -2013,6 +2049,11 @@ function updateRacer(r,dt){
     slideOff(r,nx,nz);
   }
   resolveObstacles(r);
+  // smash through hay bales (yours or a rival's) — a small scrub + a burst of straw
+  for(const bk of breakables){ if(bk.broken) continue;
+    if(dist2D(r.pos.x,r.pos.z,bk.x,bk.z)<bk.r){ bk.broken=true; bk.group.visible=false; r.speed*=0.82;
+      for(let q=0;q<3;q++) Particles.spawnBurst(bk.x+(Math.random()-.5)*2, r.pos.y+1.4, bk.z+(Math.random()-.5)*2, 0xd9b84a, r.pos.y);
+      if(dist2D(r.pos.x,r.pos.z,player().pos.x,player().pos.z)<45) Audio.sfx.crash(); } }
   r.pos.y=terrainHeight(r.pos.x,r.pos.z);
 
   // lap / progress tracking — gated by a halfway checkpoint so jitter at the
@@ -2335,6 +2376,9 @@ function step(dt){
     for(const sh of fxShaders){ sh.uniforms.uTime.value=worldTime; if(sh.uniforms.uSun) sh.uniforms.uSun.value.copy(_viewSun); } }
   for(const bf of butterflies){ const a=worldTime*bf.sp+bf.ph;
     bf.s.position.set(bf.cx+Math.cos(a)*bf.r+Math.sin(a*2.3)*1.4, bf.baseY+Math.sin(a*3)*0.8, bf.cz+Math.sin(a)*bf.r+Math.cos(a*1.7)*1.4); }
+  // roaming ox-cart slides across the lane; its collider follows it
+  for(const mv of movers){ const o=Math.sin(worldTime*mv.sp+mv.ph)*mv.span;
+    const x=mv.cx+mv.nx*o, z=mv.cz+mv.nz*o; mv.obs.x=x; mv.obs.z=z; mv.group.position.set(x, terrainHeight(x,z), z); }
   // river mist drifts and breathes; dust devils wander the crag
   for(const mt of mists){ mt.m.material.opacity=mt.baseO*(0.55+0.45*Math.sin(worldTime*0.5+mt.ph));
     mt.m.position.x=mt.x0+Math.sin(worldTime*0.18+mt.ph)*10; }
