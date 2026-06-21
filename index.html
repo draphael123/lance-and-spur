@@ -329,8 +329,8 @@ sun.shadow.camera.left=-sc; sun.shadow.camera.right=sc; sun.shadow.camera.top=sc
 sun.shadow.camera.near=10; sun.shadow.camera.far=900; sun.shadow.bias=-0.0004; sun.shadow.normalBias=0.5;
 scene.add(sun);
 scene.add(sun.target);
-// soft warm bounce fill from the opposite side
-const fill = new THREE.DirectionalLight('#ffd9b0', 0.35);
+// soft warm bounce fill from the opposite side (lifts shadow detail so the world reads less flat/matte)
+const fill = new THREE.DirectionalLight('#ffe0bc', 0.5);
 fill.position.set(-SUN_OFFSET.x, 120, -SUN_OFFSET.z);
 scene.add(fill);
 
@@ -765,7 +765,8 @@ const TRACKS=[
  { name:'Tourney Green', blurb:'Flat festival meadow — wide, fast & forgiving', roadW:26,
    ctrl:[[0,-300],[190,-240],[300,-60],[270,120],[140,270],[-60,300],[-240,220],[-320,40],[-260,-160],[-110,-280]],
    sky:{top:'#2f7bd6',mid:'#bfe2f5',bot:'#ffe9c2'}, fog:{c:'#f3e2bd',near:340,far:1120},
-   ground:0xeaf2dc, theme:'meadow', fireworks:true, caravan:128, height:(x,z)=>0, grandstands:[20,110,190], landmarks:buildGreenLandmarks, shortcut:true },
+   ground:0xeaf2dc, theme:'meadow', fireworks:true, caravan:128, grandstands:[20,110,190], landmarks:buildGreenLandmarks, shortcut:true,
+   height:(x,z)=> Math.sin(x*0.0045+0.6)*5 + Math.cos(z*0.005-0.3)*4 + Math.sin((x*0.6-z)*0.0035)*2.6 },   // gently rolling meadow (was dead-flat)
  { name:'Highland Run', blurb:'Long rolling hills, tight S-bends & a windmill', roadW:24,
    ctrl:[[0,-340],[170,-316],[240,-192],[156,-96],[300,-4],[240,144],[104,184],[168,304],[-44,324],[-192,248],[-132,104],[-304,64],[-336,-104],[-208,-236],[-92,-304]],
    sky:{top:'#3f86c8',mid:'#cfe6e0',bot:'#eef0d0'}, fog:{c:'#dde9cf',near:300,far:1040},
@@ -914,7 +915,8 @@ function buildGround(){
   geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
   geo.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
   geo.setIndex(idx); geo.computeVertexNormals();
-  const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({map:biomeGroundTex(), normalMap:grassNormalTex, normalScale:new THREE.Vector2(0.5,0.5), color:curTrack.ground, roughness:1, vertexColors:true}));
+  const winterGround=curTrack.theme==='winter';
+  const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({map:biomeGroundTex(), normalMap:grassNormalTex, normalScale:new THREE.Vector2(0.95,0.95), color:curTrack.ground, roughness:winterGround?0.78:0.94, metalness:0, vertexColors:true}));
   m.receiveShadow=true; W.add(m);
 }
 
@@ -3113,12 +3115,12 @@ function animateLegs(r,dt){
     m.rider.position.y += (REST_Y-m.rider.position.y)*Math.min(1,dt*8);
   }
 
-  // gallop dust kicked up behind the hooves
-  if(state==='race' && r.speed>14){
+  // gallop dust kicked up behind the hooves (kept light so it doesn't fog the chase cam)
+  if(state==='race' && r.speed>20){
     r._dustT=(r._dustT||0)-dt;
-    if(r._dustT<=0){ r._dustT=0.05;
+    if(r._dustT<=0){ r._dustT=0.085;
       const fwd=Math.sin(r.heading), fwz=Math.cos(r.heading);
-      Particles.spawnDust(r.pos.x-fwd*2.0, r.pos.y+0.4, r.pos.z-fwz*2.0, 0.7+sf*0.6, r.pos.y+0.1);
+      Particles.spawnDust(r.pos.x-fwd*2.4, r.pos.y+0.3, r.pos.z-fwz*2.4, 0.4+sf*0.4, r.pos.y+0.1);
     }
   }
   // hoof scuffs / skid marks on the ground (harder/longer when sliding through a hard turn)
@@ -3246,7 +3248,7 @@ function updateHUD(){
   el('lanceTxt').textContent=r.lanceCD<=0?'READY':'…';
   el('minimap').style.display=SETTINGS.minimap?'block':'none';
   if(SETTINGS.minimap) drawMini();
-  el('speedlines').style.opacity=Math.min(0.66, Math.max(0,(r.speed-48)/46) + (r._boosting?0.2:0) + (r._draft||0)*0.22);   // rush on spur / in the slipstream
+  el('speedlines').style.opacity=Math.min(0.42, Math.max(0,(r.speed-54)/52) + (r._boosting?0.16:0) + (r._draft||0)*0.16);   // rush on spur / in the slipstream
   updateNameplates();
   el('offtrack').style.opacity = (state==='race' && r._off) ? 0.95 : 0;
 }
