@@ -591,6 +591,7 @@ const BUNT_COLS=[0xe23b2e,0x2f7fd0,0x37b85e,0xe0b21f,0x9a3bd0,0xee7722];
 // ---------- per-track state (reassigned by buildWorld) ----------
 let curve, waypoints, tangents, N=260, ROAD_W=26, HALF_W=13;
 let curTrack=null, W=null, obstacles=[], windmills=[], crowds=[], birds=[], flames=[], swayers=[], butterflies=[], crowdSpots=[];
+let flocks=[];   // ground flocks that scatter into flight as you approach (reactive creatures)
 let mists=[], dustDevils=[], wheelSpots=[];   // river mist, Highmoor dust devils, watermill audio emitters
 let breakables=[], movers=[], projectiles=[]; // smashable props, roaming hazards, lobbed snowballs
 let ramps=[];                                  // jump ramps (trigger zones)
@@ -830,7 +831,7 @@ function disposeObj(o){ o.traverse(n=>{ if(n.geometry)n.geometry.dispose();
 
 function buildWorld(idx){
   if(W){ scene.remove(W); disposeObj(W); }
-  W=new THREE.Group(); scene.add(W); obstacles=[]; windmills=[]; crowds=[]; birds=[]; flames=[]; swayers=[]; butterflies=[]; crowdSpots=[]; mists=[]; dustDevils=[]; wheelSpots=[]; breakables=[]; movers=[]; projectiles=[]; ramps=[]; fxShaders.length=0;
+  W=new THREE.Group(); scene.add(W); obstacles=[]; windmills=[]; crowds=[]; birds=[]; flames=[]; swayers=[]; butterflies=[]; crowdSpots=[]; mists=[]; dustDevils=[]; wheelSpots=[]; breakables=[]; movers=[]; projectiles=[]; ramps=[]; flocks=[]; fxShaders.length=0;
   curTrack=TRACKS[idx]; ROAD_W=curTrack.roadW; HALF_W=ROAD_W/2; N=260;
   skyMat.uniforms.top.value.set(curTrack.sky.top); skyMat.uniforms.mid.value.set(curTrack.sky.mid); skyMat.uniforms.bot.value.set(curTrack.sky.bot);
   scene.fog.color.set(curTrack.fog.c); scene.fog.near=curTrack.fog.near; scene.fog.far=curTrack.fog.far;
@@ -847,6 +848,7 @@ function buildWorld(idx){
   if(curTrack.landmarks) curTrack.landmarks();
   buildProps(); buildNature(); buildWater(); buildBirds(); buildBreakables(); buildMovers();
   if(curTrack.caravan!==undefined) buildCaravan(curTrack.caravan);   // a merchant caravan crossing the track (hero hazard)
+  buildFlocks();                             // reactive ground flocks that scatter as you pass
   buildGrandArches();                        // grand themed gateways you race under (every track)
   applyTimeOfDay();
 }
@@ -863,12 +865,12 @@ function applyTimeOfDay(){
   if(typeof applyWeather==='function') applyWeather();
   // per-biome colour grade so each world has its own mood
   const th=curTrack.theme;
-  if(th==='highland'){ grade.uniforms.warm.value=-0.018; grade.uniforms.sat.value=1.05; grade.uniforms.contrast.value=1.10; }
-  else if(th==='winter'){ grade.uniforms.warm.value=-0.030; grade.uniforms.sat.value=1.02; grade.uniforms.contrast.value=1.04; }
-  else if(th==='crag'){ grade.uniforms.warm.value=-0.012; grade.uniforms.sat.value=0.92; grade.uniforms.contrast.value=1.12; }
-  else if(th==='water'){ grade.uniforms.warm.value=0.030; grade.uniforms.sat.value=1.18; grade.uniforms.contrast.value=1.04; }   // soft golden wetland
-  else if(th==='meadow'){ grade.uniforms.warm.value=0.026; grade.uniforms.sat.value=1.20; grade.uniforms.contrast.value=1.08; } // bright festival
-  else { grade.uniforms.warm.value=0.022; grade.uniforms.sat.value=1.14; grade.uniforms.contrast.value=1.07; }
+  if(th==='highland'){ grade.uniforms.warm.value=0.010; grade.uniforms.sat.value=1.14; grade.uniforms.contrast.value=1.06; }
+  else if(th==='winter'){ grade.uniforms.warm.value=-0.020; grade.uniforms.sat.value=1.07; grade.uniforms.contrast.value=1.04; }
+  else if(th==='crag'){ grade.uniforms.warm.value=0.016; grade.uniforms.sat.value=1.08; grade.uniforms.contrast.value=1.05; }   // warmer, sunnier crag (was grey & gloomy)
+  else if(th==='water'){ grade.uniforms.warm.value=0.034; grade.uniforms.sat.value=1.22; grade.uniforms.contrast.value=1.05; }   // soft golden wetland
+  else if(th==='meadow'){ grade.uniforms.warm.value=0.032; grade.uniforms.sat.value=1.26; grade.uniforms.contrast.value=1.07; } // bright festival
+  else { grade.uniforms.warm.value=0.026; grade.uniforms.sat.value=1.18; grade.uniforms.contrast.value=1.06; }
   buildEnv(SETTINGS.timeOfDay);
 }
 function setNight(on){
@@ -1256,6 +1258,17 @@ function buildNature(){
       for(let k=0;k<4;k++){ const h=2.4+Math.random()*1.6; const st=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.08,h,4),stalkMat); st.position.set((Math.random()-.5)*1.2,h/2,(Math.random()-.5)*1.2); g.add(st);
         const head=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,0.7,6),headMat); head.position.set(st.position.x,h,st.position.z); g.add(head); }
       g.position.set(x,y,z); g.traverse(o=>{ if(o.isMesh)o.castShadow=true; }); W.add(g); } }
+  // colourful wildflower clumps lining the open verges (grassy biomes) — fills the now-visible mid-ground with life & colour
+  if(!snowy && !craggy){
+    const petalCols=[0xff5a6a,0xffd24a,0xfff0f4,0xb46bff,0xff8c42], stemMat=new THREE.MeshStandardMaterial({color:0x3a7a30,roughness:1});
+    const petalMats=petalCols.map(c=>new THREE.MeshStandardMaterial({color:c, roughness:.8, emissive:c, emissiveIntensity:0.12}));
+    for(let i=0;i<70;i++){ const x=(Math.random()-.5)*900, z=(Math.random()-.5)*900; const d=distToTrack(x,z);
+      if(d<HALF_W+3 || d>66) continue;                 // a band hugging the lane
+      const cl=new THREE.Group(), y=terrainHeight(x,z), pm=petalMats[i%petalMats.length];
+      for(let k=0;k<4;k++){ const h=0.6+Math.random()*0.5, fx=(Math.random()-.5)*1.8, fz=(Math.random()-.5)*1.8;
+        const st=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,h,4),stemMat); st.position.set(fx,h/2,fz); cl.add(st);
+        const bl=new THREE.Mesh(new THREE.SphereGeometry(0.18,5,4),pm); bl.position.set(fx,h,fz); bl.scale.y=0.6; cl.add(bl); }
+      cl.position.set(x,y,z); W.add(cl); } }
   const rockN=craggy?150:highland?56:26;
   for(let i=0;i<rockN;i++){ const x=(Math.random()-.5)*1150, z=(Math.random()-.5)*1150; if(distToTrack(x,z)<HALF_W+7) continue;
     const s=(craggy?1.6:moor?1.4:1)+Math.random()*(craggy?5:moor?4.2:3.2); const rk=new THREE.Mesh(new THREE.DodecahedronGeometry(s,0), rockMat);
@@ -1309,6 +1322,23 @@ function buildBirds(){
   for(let i=0;i<7;i++){ const s=new THREE.Sprite(new THREE.SpriteMaterial({map:birdTex,transparent:true,depthWrite:false}));
     s.scale.setScalar(6+Math.random()*4); W.add(s);
     birds.push({s, cx:(Math.random()-.5)*220, cz:(Math.random()-.5)*220, rad:110+Math.random()*170, h:80+Math.random()*70, ph:Math.random()*6.28, sp:0.10+Math.random()*0.12}); }
+}
+// a flock pecking in a field by the lane that bursts into flight as you tear past, then resettles
+function buildGroundFlock(x,z,count){
+  const grp=new THREE.Group(); const y=terrainHeight(x,z); const list=[];
+  const col=curTrack.theme==='winter'?0x4a4a52:0x2a2620;
+  for(let i=0;i<count;i++){ const bx=(Math.random()-.5)*11, bz=(Math.random()-.5)*11;
+    const s=new THREE.Sprite(new THREE.SpriteMaterial({map:birdTex,transparent:true,depthWrite:false,color:col}));
+    s.scale.setScalar(2.8); s.position.set(bx,0.6,bz); grp.add(s);
+    list.push({s, hx:bx, hz:bz, ph:Math.random()*6.28, vy:0, dx:0, dz:0}); }
+  grp.position.set(x,y,z); W.add(grp);
+  flocks.push({grp, list, cx:x, cz:z, flying:false, t:0});
+}
+function buildFlocks(){
+  const th=curTrack.theme; if(th==='crag') return;          // bare crag stays austere
+  const n=th==='winter'?1:2;
+  for(let f=0; f<n; f++){ const i=((f*83+40)%N), p=waypoints[i], t=tangents[i], nv=new THREE.Vector3(-t.z,0,t.x).normalize(), side=(f%2?1:-1);
+    buildGroundFlock(p.x+nv.x*side*(HALF_W+14), p.z+nv.z*side*(HALF_W+14), 7+((Math.random()*6)|0)); }
 }
 
 // smashable hay bales right at the lane edges — barrel through them (small scrub) or knock a rival into them
@@ -1690,6 +1720,31 @@ function buildWatermill(x,z){ const g=new THREE.Group(); const y=terrainHeight(x
   obstacles.push({type:'circle',x,z,r:7,slow:0.4});
   if(!curTrack.frozen) wheelSpots.push({x, y:y+3, z});   // positional water-wheel splash/creak
 }
+// a COLOSSAL working watermill right beside the lane — the Rivermeadow hero landmark
+function buildGiantWatermill(idx){
+  const p=waypoints[idx], t=tangents[idx]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
+  const bx=p.x+n.x*(HALF_W+20), bz=p.z+n.z*(HALF_W+20), by=terrainHeight(bx,bz);
+  const g=new THREE.Group();
+  const stone=new THREE.MeshStandardMaterial({color:0xbfb295,roughness:.92,map:stoneWallTex});
+  const wood=new THREE.MeshStandardMaterial({color:0x6a4626,roughness:.9,map:woodTex});
+  const roofMat=new THREE.MeshStandardMaterial({color:0x8a3a2a,roughness:.8});
+  const house=new THREE.Mesh(new THREE.BoxGeometry(15,17,13),stone); house.position.y=8.5; g.add(house);
+  const roof=new THREE.Mesh(new THREE.ConeGeometry(12.5,8,4),roofMat); roof.position.y=21; roof.rotation.y=Math.PI/4; g.add(roof);
+  const door=new THREE.Mesh(new THREE.BoxGeometry(3,5,0.5),wood); door.position.set(5,2.5,-6.6); g.add(door);
+  for(const wx of [-4.5,0,4.5]){ const win=new THREE.Mesh(new THREE.BoxGeometry(2,2.4,0.4),wood); win.position.set(wx,12,-6.6); g.add(win); }
+  // the GIANT wheel (built in XY plane, spins around local Z) on the track-facing wall
+  const wheel=new THREE.Group(); wheel.position.set(0,8,-7.5); const R=9;
+  wheel.add(new THREE.Mesh(new THREE.TorusGeometry(R,0.6,8,28),wood));
+  const hub=new THREE.Mesh(new THREE.CylinderGeometry(0.8,0.8,2.2,10),wood); hub.rotation.x=Math.PI/2; wheel.add(hub);
+  for(let k=0;k<12;k++){ const a=k/12*Math.PI*2;
+    const spoke=new THREE.Mesh(new THREE.BoxGeometry(0.35,R*2,0.35),wood); spoke.rotation.z=a; wheel.add(spoke);
+    const pad=new THREE.Mesh(new THREE.BoxGeometry(2.8,1.4,2.6),wood); pad.position.set(Math.cos(a)*R,Math.sin(a)*R,0); pad.rotation.z=a; wheel.add(pad); }
+  g.add(wheel); windmills.push({node:wheel, speed:0.5});
+  g.position.set(bx,by,bz); g.traverse(o=>{ if(o.isMesh)o.castShadow=true; }); W.add(g);
+  g.lookAt(p.x, by, p.z);                                  // face the wheel toward the racing line
+  if(!curTrack.frozen) wheelSpots.push({x:bx, y:by+4, z:bz});
+  obstacles.push({type:'circle',x:bx,z:bz,r:10,slow:0.5});
+}
 // stone arch bridge carrying the lane across the river
 function buildStoneBridge(idx){
   const stone=new THREE.MeshStandardMaterial({color:0xc4b89c, roughness:.95, map:stoneWallTex, normalMap:stoneNormalTex, normalScale:new THREE.Vector2(0.6,0.6)});
@@ -1704,6 +1759,7 @@ function buildStoneBridge(idx){
 }
 function buildRivermeadowLandmarks(){
   buildRiverMesh();
+  if(!curTrack.frozen) buildGiantWatermill(190);          // the colossal hero watermill beside the lane
   if(curTrack._bridgeIdx!==undefined){ buildStoneBridge(curTrack._bridgeIdx);
     const b=curTrack._bridgeXZ, t=tangents[curTrack._bridgeIdx], n=new THREE.Vector3(-t.z,0,t.x).normalize();
     buildWatermill(b.x+n.x*22, b.z+n.z*22); }
@@ -3150,6 +3206,20 @@ function step(dt){
     m.s.position.set(camera.position.x+m.x, camera.position.y-14+m.y, camera.position.z+m.z);
     m.s.material.opacity=0.22*(0.55+0.45*Math.sin(worldTime*2+m.ph)); }
   for(const w of windmills) w.node.rotation.z += dt*w.speed;
+  // reactive ground flocks: peck/bob, then burst into flight as a racer tears past, then resettle
+  if(flocks.length){ const pl=player();
+    for(const fl of flocks){
+      if(!fl.flying){
+        let near=false; if(pl && state==='race' && dist2D(pl.pos.x,pl.pos.z,fl.cx,fl.cz)<24) near=true;
+        if(near){ fl.flying=true; fl.t=0; for(const b of fl.list){ b.vy=7+Math.random()*5; b.dx=(Math.random()-.5)*10; b.dz=(Math.random()-.5)*10; } }
+        else for(const b of fl.list){ b.s.position.y=0.6+Math.sin(worldTime*3+b.ph)*0.06; b.s.material.rotation=Math.sin(worldTime*2+b.ph)*0.1; }
+      } else {
+        fl.t+=dt;
+        for(const b of fl.list){ b.s.position.x+=b.dx*dt; b.s.position.z+=b.dz*dt; b.s.position.y+=b.vy*dt; b.vy=Math.max(b.vy-3*dt,2.2);
+          b.s.material.rotation=Math.sin(worldTime*14+b.ph)*0.5; }
+        if(fl.t>7){ fl.flying=false; for(const b of fl.list){ b.s.position.set(b.hx,0.6,b.hz); } }   // circle back & resettle
+      }
+    } }
   for(const b of birds){ const a=worldTime*b.sp+b.ph;
     b.s.position.set(b.cx+Math.cos(a)*b.rad, b.h+Math.sin(a*2)*4, b.cz+Math.sin(a)*b.rad); }
   for(const f of flames){ const tt=worldTime*12+f.ph; const s=0.82+Math.sin(tt)*0.16+Math.sin(tt*2.7)*0.08;
