@@ -578,11 +578,11 @@ const TRACKS=[
  { name:'Tourney Green', blurb:'Flat festival meadow — wide, fast & forgiving', roadW:26,
    ctrl:[[0,-300],[190,-240],[300,-60],[270,120],[140,270],[-60,300],[-240,220],[-320,40],[-260,-160],[-110,-280]],
    sky:{top:'#2f7bd6',mid:'#bfe2f5',bot:'#ffe9c2'}, fog:{c:'#f3e2bd',near:340,far:1120},
-   ground:0xeaf2dc, height:(x,z)=>0, grandstands:[20,110,190], landmarks:buildGreenLandmarks },
+   ground:0xeaf2dc, height:(x,z)=>0, grandstands:[20,110,190], landmarks:buildGreenLandmarks, shortcut:true },
  { name:'Highland Run', blurb:'Long rolling hills, tight S-bends & a windmill', roadW:24,
    ctrl:[[0,-340],[170,-316],[240,-192],[156,-96],[300,-4],[240,144],[104,184],[168,304],[-44,324],[-192,248],[-132,104],[-304,64],[-336,-104],[-208,-236],[-92,-304]],
    sky:{top:'#3f86c8',mid:'#cfe6e0',bot:'#eef0d0'}, fog:{c:'#dde9cf',near:300,far:1040},
-   ground:0xdfeccb, grandstands:[16,150], gateAt:62, windmillAt:[300,300], landmarks:buildHighlandLandmarks,
+   ground:0xdfeccb, grandstands:[16,150], gateAt:62, windmillAt:[300,300], landmarks:buildHighlandLandmarks, shortcut:true,
    height:(x,z)=>{ let h=Math.sin(x*0.0055+0.5)*9 + Math.cos(z*0.006-0.3)*8 + Math.sin((x*0.7-z)*0.003)*5;
      const dx=x-300,dz=z-300; h+=20*Math.exp(-(dx*dx+dz*dz)/30000);    // windmill knoll
      const vx=x+260,vz=z+140; h-=9*Math.exp(-(vx*vx+vz*vz)/45000);     // a hollow
@@ -623,10 +623,11 @@ function buildWorld(idx){
   curve=new THREE.CatmullRomCurve3(ctrl,true,'catmullrom',0.5);
   waypoints=curve.getSpacedPoints(N);
   tangents=[]; for(let i=0;i<=N;i++){ const t=curve.getTangentAt((i%N)/N); tangents.push(new THREE.Vector3(t.x,0,t.z).normalize()); }
-  curTrack._fordIdx=undefined; curTrack._bridgeXZ=undefined;
+  curTrack._fordIdx=undefined; curTrack._bridgeXZ=undefined; curTrack._scut=undefined;
   if(curTrack.river) prepareRiver();        // locate the ford & bridge crossings before the terrain is sampled
+  if(curTrack.shortcut) prepareShortcut();  // pick the sharpest bend to open as a shortcut (before the wall is built)
   buildMountains();
-  buildGround(); buildRoadMesh(); buildStartLine(); buildWall(); buildWallShields(); buildDeco();
+  buildGround(); buildRoadMesh(); buildStartLine(); buildWall(); buildShortcutPath(); buildWallShields(); buildDeco();
   if(curTrack.landmarks) curTrack.landmarks();
   buildProps(); buildNature(); buildWater(); buildBirds(); buildBreakables(); buildMovers();
   applyTimeOfDay();
@@ -759,16 +760,22 @@ function buildWallShields(){
 function buildWall(){
   const OFF=HALF_W+WALL_INNER, T=2.0, H=4.4, segs=320;
   const stoneMat=new THREE.MeshStandardMaterial({map:stoneWallTex, normalMap:stoneNormalTex, normalScale:new THREE.Vector2(0.8,0.8), color:0xcabfa6, roughness:.96, side:THREE.DoubleSide});
+  const sc=curTrack._scut;
+  // a wall point is in the shortcut "gap" if its waypoint is within [a,b] AND it sits on the chord (inner) side
+  function inGap(px,pz,ix,iz,u){ if(!sc) return false; const wi=Math.round(u*N)%N;
+    if(((wi-sc.a+N)%N) > ((sc.b-sc.a+N)%N)) return false;
+    return dist2D(ix,iz,sc.mx,sc.mz) < dist2D(px,pz,sc.mx,sc.mz); }
   for(const sgn of [1,-1]){
-    const pos=[],uv=[],idx=[];
+    const pos=[],uv=[],idx=[],skip=[];
     for(let i=0;i<=segs;i++){ const u=(i%segs)/segs; const p=curve.getPointAt(u);
       const tn=curve.getTangentAt(u); const n=new THREE.Vector3(-tn.z,0,tn.x).normalize().multiplyScalar(sgn);
       const ix=p.x+n.x*OFF, iz=p.z+n.z*OFF, ox=p.x+n.x*(OFF+T), oz=p.z+n.z*(OFF+T);
       const iyb=terrainHeight(ix,iz), oyb=terrainHeight(ox,oz);
       pos.push(ix,iyb,iz, ix,iyb+H,iz, ox,oyb+H,oz, ox,oyb,oz);   // innerB, innerT, outerT, outerB
       const v=i*0.35; uv.push(0,v, 0,v+0.5, 1,v+0.5, 1,v);
+      skip[i]=inGap(p.x,p.z,ix,iz,u);
     }
-    for(let i=0;i<segs;i++){ const b=i*4;
+    for(let i=0;i<segs;i++){ if(skip[i]||skip[i+1]) continue; const b=i*4;
       idx.push(b,b+1,b+5, b,b+5,b+4);        // inner face
       idx.push(b+1,b+2,b+6, b+1,b+6,b+5);    // top
       idx.push(b+3,b+7,b+6, b+3,b+6,b+2);    // outer face
@@ -780,6 +787,7 @@ function buildWall(){
     // stone crenellation teeth (merlons) sitting flush on the wall top, regularly spaced with gaps
     const merlonGeo=new THREE.BoxGeometry(2.0,1.6,T); merlonGeo.translate(0,0.8,0);   // base at wall top
     for(let i=0;i<N;i+=5){ const p=waypoints[i], tn=tangents[i]; const n=new THREE.Vector3(-tn.z,0,tn.x).normalize().multiplyScalar(sgn);
+      if(inGap(p.x,p.z,p.x+n.x*OFF,p.z+n.z*OFF,i/N)) continue;
       const mx=p.x+n.x*(OFF+T*0.5), mz=p.z+n.z*(OFF+T*0.5);
       const mer=new THREE.Mesh(merlonGeo, stoneMat); mer.position.set(mx, terrainHeight(mx,mz)+H, mz);
       mer.rotation.y=Math.atan2(tn.x,tn.z); mer.castShadow=true; W.add(mer);
@@ -790,6 +798,7 @@ function buildWall(){
     const buntMats=BUNT_COLS.map(c=>new THREE.MeshStandardMaterial({color:c, side:THREE.DoubleSide, roughness:.7}));
     let fc=0;
     for(let i=2;i<N;i+=5){ const p=waypoints[i], tn=tangents[i]; const n=new THREE.Vector3(-tn.z,0,tn.x).normalize().multiplyScalar(sgn);
+      if(inGap(p.x,p.z,p.x+n.x*OFF,p.z+n.z*OFF,i/N)) continue;
       const fx=p.x+n.x*OFF, fz=p.z+n.z*OFF; const fl=new THREE.Mesh(flagGeo,buntMats[(fc++)%buntMats.length]);
       fl.position.set(fx, terrainHeight(fx,fz)+H-0.3, fz); fl.lookAt(fx-n.x, terrainHeight(fx,fz)+H-0.3, fz-n.z); W.add(fl);
     }
@@ -1151,6 +1160,41 @@ function buildGate(wpIdx){
 // ---------- Rivermeadow (water track) ----------
 // locate the two waypoints where the lane crosses the river: nearer one = the
 // splashing ford, the other = the stone bridge (kept level over the channel).
+// ---------- shortcut (a wall-gap chord across the sharpest bend) ----------
+// auto-placed where the arc most exceeds the chord, so it always lands on a real
+// corner. Kept short (14 wps) so the lap look-ahead window catches up after a cut.
+function prepareShortcut(){
+  const S=14; let best=1.18, bi=-1;
+  for(let a=0;a<N;a++){
+    if(a<24||a>N-24) continue; const mid=(a+S/2)%N; if(mid>N*0.42&&mid<N*0.58) continue;   // avoid start/finish & halfway
+    let arc=0; for(let k=0;k<S;k++){ const i=(a+k)%N,j=(a+k+1)%N; arc+=dist2D(waypoints[i].x,waypoints[i].z,waypoints[j].x,waypoints[j].z); }
+    const b=(a+S)%N, chord=dist2D(waypoints[a].x,waypoints[a].z,waypoints[b].x,waypoints[b].z);
+    const ratio=arc/Math.max(1,chord); if(ratio>best){ best=ratio; bi=a; }
+  }
+  if(bi<0) return; const a=bi, b=(bi+S)%N;
+  curTrack._scut={a,b,w:6.5, mx:(waypoints[a].x+waypoints[b].x)/2, mz:(waypoints[a].z+waypoints[b].z)/2};
+}
+function onShortcut(x,z){ const s=curTrack&&curTrack._scut; if(!s) return false;
+  const ax=waypoints[s.a].x, az=waypoints[s.a].z, dx=waypoints[s.b].x-ax, dz=waypoints[s.b].z-az, L=dx*dx+dz*dz||1;
+  let t=((x-ax)*dx+(z-az)*dz)/L; t=Math.max(0,Math.min(1,t));
+  return Math.hypot(x-(ax+dx*t), z-(az+dz*t)) < s.w; }
+function buildShortcutPath(){ const s=curTrack&&curTrack._scut; if(!s) return;
+  const ax=waypoints[s.a].x, az=waypoints[s.a].z, bx=waypoints[s.b].x, bz=waypoints[s.b].z;
+  const dx=bx-ax, dz=bz-az, len=Math.hypot(dx,dz)||1, nx=-dz/len, nz=dx/len, w=s.w;
+  const segN=24, pos=[],uv=[],idx=[];
+  for(let i=0;i<=segN;i++){ const tt=i/segN, cx=ax+dx*tt, cz=az+dz*tt;
+    pos.push(cx+nx*w, terrainHeight(cx+nx*w,cz+nz*w)+0.07, cz+nz*w,  cx-nx*w, terrainHeight(cx-nx*w,cz-nz*w)+0.07, cz-nz*w); uv.push(0,i*0.6,1,i*0.6); }
+  for(let i=0;i<segN;i++){ const a2=i*2,b2=a2+1,c2=a2+2,d2=a2+3; idx.push(a2,c2,b2, b2,c2,d2); }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2)); g.setIndex(idx); g.computeVertexNormals();
+  const path=new THREE.Mesh(g, new THREE.MeshStandardMaterial({color:0xb79466, roughness:1, map:roadTex})); path.receiveShadow=true; W.add(path);
+  // green marker flags so the cut is visible
+  for(const [ex,ez] of [[ax,az],[bx,bz]]) for(const sw of [1,-1]){
+    const fx=ex+nx*sw*(w+0.6), fz=ez+nz*sw*(w+0.6), fy=terrainHeight(fx,fz);
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.2,6,6), new THREE.MeshStandardMaterial({color:0x7a5a30})); pole.position.set(fx,fy+3,fz); W.add(pole);
+    const flag=new THREE.Mesh(new THREE.PlaneGeometry(2,1.2), new THREE.MeshStandardMaterial({color:0x37b85e,side:THREE.DoubleSide})); flag.position.set(fx+0.9,fy+5,fz); W.add(flag);
+    swayers.push({node:flag,ph:Math.random()*6,amp:0.18,axis:'y',base:0}); }
+}
 function prepareRiver(){
   const hit=[]; for(let i=0;i<N;i++){ if(riverDist(waypoints[i].x,waypoints[i].z) < HALF_W+7) hit.push(i); }
   if(!hit.length) return;
@@ -1980,7 +2024,8 @@ function updateRacer(r,dt){
   // off the track surface? (XZ — riders sit on terrain now)
   const ni=nearestIndex(r.pos,r.wp);
   const offDist=dist2D(r.pos.x,r.pos.z, waypoints[ni].x, waypoints[ni].z);
-  const onGrass=offDist>HALF_W+1.5;
+  const onCut=onShortcut(r.pos.x,r.pos.z);                 // the dirt shortcut drives like the road
+  const onGrass=offDist>HALF_W+1.5 && !onCut;
   if(r.isPlayer) r._off=onGrass;
 
   // player catch-up ("the catcher"): trailing the pack lends natural speed — no items
@@ -2043,7 +2088,7 @@ function updateRacer(r,dt){
   const niw=nearestIndex(r.pos,r.wp);
   const wd=dist2D(r.pos.x,r.pos.z, waypoints[niw].x, waypoints[niw].z);
   const LIMIT=HALF_W+WALL_INNER-RIDER_RAD;
-  if(wd>LIMIT){
+  if(wd>LIMIT && !onShortcut(r.pos.x,r.pos.z)){   // the shortcut breaches the wall — don't yank riders back onto it there
     const nx=(r.pos.x-waypoints[niw].x)/(wd||1), nz=(r.pos.z-waypoints[niw].z)/(wd||1);
     r.pos.x=waypoints[niw].x + nx*LIMIT; r.pos.z=waypoints[niw].z + nz*LIMIT;
     slideOff(r,nx,nz);
