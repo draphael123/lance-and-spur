@@ -588,7 +588,7 @@ let curve, waypoints, tangents, N=260, ROAD_W=26, HALF_W=13;
 let curTrack=null, W=null, obstacles=[], windmills=[], crowds=[], birds=[], flames=[], swayers=[], butterflies=[], crowdSpots=[];
 let mists=[], dustDevils=[], wheelSpots=[];   // river mist, Highmoor dust devils, watermill audio emitters
 let breakables=[], movers=[], projectiles=[]; // smashable props, roaming hazards, lobbed snowballs
-let _fwT=0, _sbT=0;                            // firework / snowball timers
+let _fwT=0, _sbT=0, _catT=0, _baseExp=1.12;    // firework / snowball / catapult timers + tunnel-darkening base exposure
 let worldTime=0;
 const fxShaders=[];   // compiled shaders carrying a uTime uniform (animated water + wind-swept grass)
 const _viewSun=new THREE.Vector3(), _camFwd=new THREE.Vector3();
@@ -777,7 +777,7 @@ const TRACKS=[
  { name:'Highmoor Crag', blurb:'A hard hill-climb to a clifftop fort, a fast descent & a gorge bridge', roadW:24,
    ctrl:[[0,-330],[150,-300],[280,-230],[340,-90],[300,60],[330,200],[200,310],[40,340],[-130,320],[-280,250],[-345,90],[-300,-90],[-210,-230],[-80,-320]],
    sky:{top:'#4a78b0',mid:'#cdd9dc',bot:'#e6e4cf'}, fog:{c:'#d6d8cb',near:300,far:1040},
-   ground:0xb7b3ab, theme:'crag', grandstands:[120,235], bridge:true, landmarks:buildHighmoorLandmarks,
+   ground:0xb7b3ab, theme:'crag', grandstands:[120,235], bridge:true, tunnel:[40,66], catapult:true, landmarks:buildHighmoorLandmarks,
    height:(x,z)=>{ let h=Math.sin(x*0.006+0.4)*7 + Math.cos(z*0.0065-0.2)*6;
      const cx=x-300,cz=z+285; h+=70*Math.exp(-(cx*cx+cz*cz)/82000);    // the crag (clifftop fort)
      const rx=x+300,rz=z-150; h+=30*Math.exp(-(rx*rx+rz*rz)/60000);    // outer ridge
@@ -848,7 +848,7 @@ function applyTimeOfDay(){
   skyMat.uniforms.top.value.set(p.top||curTrack.sky.top); skyMat.uniforms.mid.value.set(p.mid||curTrack.sky.mid); skyMat.uniforms.bot.value.set(p.bot||curTrack.sky.bot);
   skyMat.uniforms.sunCol.value.set(p.halo);
   sun.color.set(p.sun); sun.intensity=p.si; hemi.color.set(p.hemi); hemi.intensity=p.hi;
-  scene.fog.color.set(p.fog||curTrack.fog.c); renderer.toneMappingExposure=p.exp;
+  scene.fog.color.set(p.fog||curTrack.fog.c); renderer.toneMappingExposure=p.exp; _baseExp=p.exp;
   setNight(p.night);
   if(typeof aurora!=='undefined' && aurora) aurora.grp.visible = p.night && !!curTrack.aurora;
   if(typeof applyWeather==='function') applyWeather();
@@ -1644,6 +1644,47 @@ function buildHighmoorLandmarks(){
   if(bi>=0) buildGorgeBridge(bi);
   buildDustDevils();
   buildRockfall();
+  if(curTrack.tunnel) buildTunnel(curTrack.tunnel[0], curTrack.tunnel[1]);   // a cave bored through the crag
+  if(curTrack.catapult) buildCatapult(300,-285);                              // on the fort knoll
+  buildEagles();
+}
+// a cave/tunnel you drive THROUGH: dark inner walls + a stone ceiling over the lane
+function buildTunnel(a,b){
+  const dark=new THREE.MeshStandardMaterial({color:0x46423b, roughness:1, map:stoneWallTex, normalMap:stoneNormalTex, normalScale:new THREE.Vector2(0.9,0.9), side:THREE.DoubleSide});
+  const H=8.5, off=HALF_W+WALL_INNER+0.4, span=((b-a)%N+N)%N;
+  for(let k=0;k<=span;k++){ const i=(a+k)%N, p=waypoints[i], t=tangents[i]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
+    const cy=terrainHeight(p.x,p.z), ang=Math.atan2(t.x,t.z);
+    if(k<span){ const j=(a+k+1)%N, p2=waypoints[j], cy2=terrainHeight(p2.x,p2.z), segLen=dist2D(p.x,p.z,p2.x,p2.z)+0.6;
+      const ceil=new THREE.Mesh(new THREE.BoxGeometry(off*2+2,1.0,segLen),dark); ceil.position.set((p.x+p2.x)/2,(cy+cy2)/2+H,(p.z+p2.z)/2); ceil.rotation.y=Math.atan2(t.x,t.z); ceil.receiveShadow=true; W.add(ceil);
+      for(const s of [1,-1]){ const wx=p.x+n.x*s*off, wz=p.z+n.z*s*off; const wall=new THREE.Mesh(new THREE.BoxGeometry(1.2,H+1,segLen),dark); wall.position.set((wx+p2.x+n.x*s*off)/2,cy+(H+1)/2,(wz+p2.z+n.z*s*off)/2); wall.rotation.y=ang; wall.castShadow=true; wall.receiveShadow=true; W.add(wall); } }
+    if(k===0||k===span){ const arch=new THREE.Mesh(new THREE.BoxGeometry(off*2+4,2.2,1.6),dark); arch.position.set(p.x,cy+H+1,p.z); arch.rotation.y=ang; W.add(arch); }   // cave-mouth lintel
+  }
+}
+// a trebuchet on the fort that lobs boulders onto the lane
+function buildCatapult(x,z){
+  const g=new THREE.Group(); const y=terrainHeight(x,z);
+  const wood=new THREE.MeshStandardMaterial({color:0x5a3f24,roughness:.9, map:woodTex});
+  for(const sx of [-2,2]) for(const sz of [-1.4,1.4]){ const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,7,6),wood); leg.position.set(sx,3.5,sz); leg.rotation.z=sx*0.12; g.add(leg); }
+  const axle=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,4,8),wood); axle.rotation.x=Math.PI/2; axle.position.y=6.5; g.add(axle);
+  const arm=new THREE.Mesh(new THREE.BoxGeometry(0.5,9,0.5),wood); arm.position.set(0,7,2); arm.rotation.x=-0.7; g.add(arm);
+  const bucket=new THREE.Mesh(new THREE.SphereGeometry(0.9,8,6,0,6.28,0,1.7),wood); bucket.position.set(0,10.6,5.2); g.add(bucket);
+  g.position.set(x,y,z); g.rotation.y=Math.atan2(-x,-z); g.traverse(o=>{ if(o.isMesh)o.castShadow=true; }); W.add(g);
+  curTrack._catPos={x,z,arm};
+}
+// a boulder lobbed (catapult) toward the player's predicted spot
+function lobRock(fromX,fromZ){ const pl=player(); if(!pl) return;
+  const fy=terrainHeight(fromX,fromZ)+12;
+  const mesh=new THREE.Mesh(new THREE.DodecahedronGeometry(1.3,0), new THREE.MeshStandardMaterial({color:0x7a756c,roughness:1,flatShading:true})); mesh.position.set(fromX,fy,fromZ); mesh.castShadow=true; W.add(mesh);
+  const tx=pl.pos.x+Math.sin(pl.heading)*pl.speed*0.6, tz=pl.pos.z+Math.cos(pl.heading)*pl.speed*0.6, T=1.4;
+  const vx=(tx-fromX)/T, vz=(tz-fromZ)/T, vy=((terrainHeight(tx,tz)+1.5-fy)/T)+0.5*22*T;
+  projectiles.push({mesh, vx, vy, vz, x:fromX, y:fy, z:fromZ, kind:'rock'});
+  Audio.sfx.crash&&Audio.sfx.crash();
+}
+// a few eagles wheeling over the crag
+function buildEagles(){
+  for(let i=0;i<3;i++){ const s=new THREE.Sprite(new THREE.SpriteMaterial({map:birdTex,transparent:true,depthWrite:false,color:0x2a2620}));
+    s.scale.setScalar(11+Math.random()*5); W.add(s);
+    birds.push({s, cx:(Math.random()-.5)*200, cz:(Math.random()-.5)*200, rad:90+Math.random()*120, h:55+Math.random()*40, ph:Math.random()*6.28, sp:0.13+Math.random()*0.1}); }
 }
 // a clutch of boulders that tumbles across the descent — time your run
 function buildRockfall(){
@@ -1660,7 +1701,7 @@ function lobSnowball(fromX,fromZ){ const pl=player(); if(!pl) return;
   const mesh=new THREE.Mesh(new THREE.SphereGeometry(0.5,7,6), new THREE.MeshStandardMaterial({color:0xffffff,roughness:1})); mesh.position.set(fromX,fy,fromZ); mesh.castShadow=true; W.add(mesh);
   const tx=pl.pos.x+Math.sin(pl.heading)*pl.speed*0.5, tz=pl.pos.z+Math.cos(pl.heading)*pl.speed*0.5, T=1.1;
   const vx=(tx-fromX)/T, vz=(tz-fromZ)/T, vy=((terrainHeight(tx,tz)+1.5 - fy)/T) + 0.5*22*T;
-  projectiles.push({mesh, vx, vy, vz, x:fromX, y:fy, z:fromZ});
+  projectiles.push({mesh, vx, vy, vz, x:fromX, y:fy, z:fromZ, kind:'snow'});
 }
 
 // ---------- the Frostmere Circuit (winter) landmarks ----------
@@ -2888,15 +2929,24 @@ function step(dt){
       Particles.spawnBurst(fx,fy,fz,col); Particles.spawnBurst(fx,fy,fz,0xfff0c0); } }
     if(curTrack.theme==='winter' && crowdSpots.length){ _sbT-=dt; if(_sbT<=0){ _sbT=1.3+Math.random()*1.5;
       const cs=crowdSpots[(Math.random()*crowdSpots.length)|0]; lobSnowball(cs.x,cs.z); } }
+    if(curTrack.catapult && curTrack._catPos){ _catT-=dt; if(_catT<=0){ _catT=2.6+Math.random()*1.8;
+      const c=curTrack._catPos; if(c.arm) c.arm.rotation.x=-1.4; lobRock(c.x,c.z); } }
   }
-  // snowball flight + impact (splash + a light stagger if it lands on you)
+  if(curTrack && curTrack._catPos && curTrack._catPos.arm){ const arm=curTrack._catPos.arm; arm.rotation.x += (-0.7-arm.rotation.x)*Math.min(1,dt*3); }   // arm recoils back
+  // projectile flight + impact (snowball = light; catapult boulder = a heavy hit)
   if(projectiles.length){ for(const pr of projectiles){ pr.vy-=22*dt; pr.x+=pr.vx*dt; pr.y+=pr.vy*dt; pr.z+=pr.vz*dt;
       pr.mesh.position.set(pr.x,pr.y,pr.z); pr.mesh.rotation.x+=dt*6;
       const gy=terrainHeight(pr.x,pr.z);
-      if(pr.y<=gy+0.3){ Particles.spawnSplash(pr.x,gy+0.2,pr.z,1.0); const pl=player();
-        if(pl && state==='race' && dist2D(pr.x,pr.z,pl.pos.x,pl.pos.z)<3.5){ pl.stun=Math.max(pl.stun,0.3); pl.tumble=0.3; pl.speed*=0.82; toast('❄ Snowball!'); }
-        W.remove(pr.mesh); pr.mesh.geometry.dispose(); pr.dead=true; } }
+      if(pr.y<=gy+0.3){ const pl=player(), hit=pl && state==='race' && dist2D(pr.x,pr.z,pl.pos.x,pl.pos.z)<(pr.kind==='rock'?4.2:3.5);
+        if(pr.kind==='rock'){ Particles.spawnBurst(pr.x,gy+0.5,pr.z,0x8a857c,gy); Audio.sfx.crash&&Audio.sfx.crash();
+          if(hit){ pl.stun=Math.max(pl.stun,0.55); pl.tumble=0.55; pl.speed*=0.45; shake=0.5; toast('🪨 Boulder!'); } }
+        else { Particles.spawnSplash(pr.x,gy+0.2,pr.z,1.0); if(hit){ pl.stun=Math.max(pl.stun,0.3); pl.tumble=0.3; pl.speed*=0.82; toast('❄ Snowball!'); } }
+        W.remove(pr.mesh); pr.mesh.geometry.dispose(); pr.mesh.material.dispose(); pr.dead=true; } }
     projectiles=projectiles.filter(p=>!p.dead); }
+  // driving through a tunnel darkens the world
+  if(curTrack && curTrack.tunnel){ const pl=player(); let inTun=false;
+    if(pl){ const ni=globalNearest(pl.pos); const a=curTrack.tunnel[0], len=((curTrack.tunnel[1]-a)%N+N)%N, d=((ni-a)%N+N)%N; inTun = d<=len && dist2D(pl.pos.x,pl.pos.z,waypoints[ni].x,waypoints[ni].z)<HALF_W+4; }
+    const want=inTun?_baseExp*0.5:_baseExp; renderer.toneMappingExposure += (want-renderer.toneMappingExposure)*Math.min(1,dt*4); }
   // aurora curtains shimmer over Wyrmspire
   if(aurora.grp.visible){ for(const b of aurora.bands){ b.m.material.opacity=0.3+0.22*Math.sin(worldTime*0.5+b.ph); b.m.position.x=b.base+Math.sin(worldTime*0.2+b.ph)*45; } }
   // river mist drifts and breathes; dust devils wander the crag
