@@ -161,7 +161,7 @@
     <div><b>A</b><b>D</b>Steer</div>
     <div><b>␣</b>Couch lance &amp; strike</div>
     <div><b>⇧</b>Spur (boost, drains stamina)</div>
-    <div><b>B</b>Brace (block a hit)</div>
+    <div><b>B</b>Brace · tap to time a parry</div>
   </div>
   <div class="trackSel" id="trackSel">
     <div class="trackCard selected" data-track="0"><div class="tname">Tourney Green</div><div class="tblurb">Flat festival meadow — wide, fast &amp; forgiving</div></div>
@@ -1646,6 +1646,7 @@ const Audio = (()=>{
     cheer(){ noise(0.7,0.22,2400); },
     splash(){ noise(0.28,0.32,1600); blip(320,0.12,'sine',0.10); },
     boost(){ boostWhoosh(); },
+    parry(){ blip(880,0.08,'square',0.16); blip(1320,0.13,'triangle',0.12); noise(0.12,0.18,3200); },
     fanfare(){ [523,659,784,1047,1319].forEach((f,i)=>setTimeout(()=>{ blip(f,0.55,'square',0.26); blip(f*1.5,0.5,'triangle',0.12); }, i*150)); },
   };
 
@@ -1794,8 +1795,10 @@ function updateAI(r,dt){
     const tgt=findStrikeTarget(r);
     if(tgt && Math.random()<r.aiAggro*dt*3.0*dm) r._aiStrike=true;
   }
-  // brace if a threat is right behind-beside on lance side
-  r.bracing = false;
+  // brace — and sometimes time a parry — when a rival is right on top of us
+  let threatened=false; for(const o of racers){ if(o===r||o.spinout>0) continue; if(dist2D(r.pos.x,r.pos.z,o.pos.x,o.pos.z)<9){ threatened=true; break; } }
+  r.bracing = threatened && Math.random()<0.5*r.aiSkill;
+  if(threatened && r._parryT<=0 && Math.random()<0.02*r.aiSkill) r._parryT=0.35;
 }
 
 function findStrikeTarget(r){
@@ -1818,30 +1821,63 @@ function doStrike(r){
   if(r.isPlayer) Audio.sfx.lance();
   const tgt=findStrikeTarget(r);
   if(tgt){
-    // schedule the actual hit at peak of thrust
-    r._pendingHit={tgt, t:TUNE.strikeWindow*0.5};
+    // strike quality: best with a well-aimed couch at the lance's sweet spot (~6.5 long)
+    const fwd=new THREE.Vector3(Math.sin(r.heading),0,Math.cos(r.heading));
+    const to=tgt.pos.clone().sub(r.pos); to.y=0; const dist=to.length(); to.normalize();
+    const align=Math.max(0,(to.dot(fwd)-TUNE.lanceCone)/(1-TUNE.lanceCone));
+    const sweet=1-Math.min(1,Math.abs(dist-6.5)/5.5);
+    let quality=Math.max(0,Math.min(1, align*0.6+sweet*0.4));
+    if(!r.isPlayer) quality=Math.min(quality,0.78);          // only a player's clean couch can land a perfect
+    r._pendingHit={tgt, t:TUNE.strikeWindow*0.5, quality};
   } else if(r.isPlayer){
     toast('Lance swings wide!');
   }
 }
 
-function landHit(attacker, victim){
+function landHit(attacker, victim, quality){
   if(victim.stun>0.4 || victim.spinout>0) return;
-  let dmg=TUNE.healthHit, knock=TUNE.knock, stun=TUNE.stunTime, slow=0.55;
+  quality = quality===undefined?0.5:quality;
+  const involvesPlayer = attacker.isPlayer || victim.isPlayer;
+  const hitPt=victim.pos.clone().lerp(attacker.pos,0.4); hitPt.y=victim.pos.y+4;
+
+  // timed parry — a well-timed brace negates the blow and staggers the attacker
+  if(victim._parryT>0){
+    Particles.spawnRing(hitPt.x,hitPt.y,hitPt.z); Particles.spawnBurst(hitPt.x,hitPt.y,hitPt.z,0xfff0b0); Audio.sfx.parry();
+    attacker.stun=Math.max(attacker.stun,0.7); attacker.tumble=0.7; attacker.speed*=0.55; attacker.lanceCD=Math.max(attacker.lanceCD,0.7);
+    victim._parryT=0; victim.speed*=0.96;
+    if(involvesPlayer) hitStop=0.06;
+    if(victim.isPlayer){ toast('⛨ PARRIED!'); shake=0.25; }
+    else if(attacker.isPlayer){ toast(victim.team.name+' parried!'); shake=0.2; }
+    return;
+  }
+
+  // knock direction — also probed for hazard knock-offs (gorge edge / deep water)
+  const side=victim.pos.clone().sub(attacker.pos); side.y=0;
+  if(side.lengthSq()<0.001) side.set(Math.sin(attacker.heading+1.4),0,Math.cos(attacker.heading+1.4));
+  side.normalize();
+  const probe=victim.pos.clone().addScaledVector(side,6);
+  const drop=victim.pos.y-terrainHeight(probe.x,probe.z);
+  const intoWater = !!curTrack.river && riverDist(probe.x,probe.z)<11;
+  const knockOff = (drop>11 || intoWater) && !victim.bracing;
+
+  let dmg=TUNE.healthHit*(0.7+quality*0.9), knock=TUNE.knock*(0.7+quality*0.7), stun=TUNE.stunTime, slow=0.55;
+  const perfect = quality>0.82;
   if(victim.bracing){ dmg*=0.4; knock*=0.4; stun*=0.4; slow=0.85; if(victim.isPlayer) toast('Braced!'); else if(attacker.isPlayer) toast('They braced it!'); }
   victim.health=Math.max(0, victim.health-dmg);
-  const hitPt=victim.pos.clone().lerp(attacker.pos,0.4); hitPt.y=victim.pos.y+4;
-  const involvesPlayer = attacker.isPlayer || victim.isPlayer;
   Particles.spawnRing(hitPt.x,hitPt.y,hitPt.z);                        // shockwave
   Particles.spawnBurst(hitPt.x,hitPt.y,hitPt.z, 0x8a5a2a);            // wood splinters
-  if(victim.health<=0){
-    // out of health -> spinout (~2s) then auto-recover with full health
-    victim.spinout=TUNE.spinTime; victim.stun=TUNE.spinTime; victim.tumble=TUNE.spinTime;
-    victim.speed*=0.15; knock*=1.6; Audio.sfx.spin();
+
+  if(victim.health<=0 || (perfect && !victim.bracing) || knockOff){
+    // unhorsed -> spinout (~2s) then auto-recover with full health
+    victim.spinout=TUNE.spinTime; victim.stun=TUNE.spinTime; victim.tumble=TUNE.spinTime; victim.health=0;
+    victim.speed*=0.15; knock*=knockOff?2.2:1.6; Audio.sfx.spin();
     Particles.spawnBurst(hitPt.x,hitPt.y,hitPt.z, 0xffd24a); Particles.spawnBurst(hitPt.x,hitPt.y,hitPt.z, victim.team.c);
-    if(involvesPlayer){ hitStop=0.07; }
-    if(victim.isPlayer){ toast('SPUN OUT!'); shake=0.7; slowmo=0.7; }   // dramatic slow-mo on your own wipeout
-    else if(attacker.isPlayer){ toast('💫 '+victim.team.name+' spun out!'); shake=0.4; attacker._spins=(attacker._spins||0)+1; }
+    if(involvesPlayer) hitStop=0.07;
+    if(knockOff){ if(victim.isPlayer){ toast(intoWater?'💦 Knocked into the water!':'💥 Knocked off the edge!'); shake=0.7; slowmo=0.7; }
+        else if(attacker.isPlayer){ toast('💥 '+victim.team.name+(intoWater?' splashes down!':' goes over the edge!')); shake=0.45; attacker._spins=(attacker._spins||0)+1; } }
+    else if(victim.isPlayer){ toast('SPUN OUT!'); shake=0.7; slowmo=0.7; }
+    else if(attacker.isPlayer){ toast((perfect?'★ PERFECT! ':'💫 ')+victim.team.name+' spun out!'); shake=perfect?0.5:0.4; attacker._spins=(attacker._spins||0)+1;
+      if(perfect){ attacker.stamina=Math.min(1,attacker.stamina+0.35); attacker.speed*=1.05; } }   // style reward for a clean unhorse
   } else {
     victim.stun=stun; victim.tumble=stun;          // stagger you ride through, just harder now
     victim.speed*=slow;
@@ -1850,10 +1886,7 @@ function landHit(attacker, victim){
     if(attacker.isPlayer){ toast('💥 Struck '+victim.team.name+'!'); shake=0.32; }
     else if(victim.isPlayer){ toast(attacker.team.name+' lands a hit!'); shake=0.5; }
   }
-  // lateral knock away from attacker (stronger force now)
-  const side=victim.pos.clone().sub(attacker.pos); side.y=0;
-  if(side.lengthSq()<0.001) side.set(Math.sin(attacker.heading+1.4),0,Math.cos(attacker.heading+1.4));
-  side.normalize(); victim._knockDir=side; victim._knockMag=knock;
+  victim._knockDir=side; victim._knockMag=knock;
   if(attacker.isPlayer) attacker._hits=(attacker._hits||0)+1;
 }
 
@@ -1869,13 +1902,14 @@ function updateRacer(r,dt){
   // timers
   if(r.stun>0){ r.stun-=dt; }
   if(r.spinout>0){ r.spinout-=dt; if(r.spinout<=0){ r.health=1; } }   // recover after spinout
+  if(r._parryT>0) r._parryT-=dt;                                      // parry window after a fresh brace press
   const stunned=r.stun>0;
   const spinning=r.spinout>0;
   // health slowly regenerates between hits
   if(!spinning) r.health=Math.min(1, r.health + TUNE.healthRegen*dt);
 
-  // brace state
-  if(r.isPlayer) r.bracing = keys['KeyB']||touch.brace;
+  // brace state — a fresh press opens a short parry window
+  if(r.isPlayer){ const b=keys['KeyB']||touch.brace; if(b && !r._wasBrace) r._parryT=0.4; r._wasBrace=b; r.bracing=b; }
 
   // throttle / steer.  Spinout = a real spun-out stop you ride out of; a normal
   // stagger keeps you galloping automatically (no dead stop), just no steering/strike.
@@ -1962,7 +1996,7 @@ function updateRacer(r,dt){
   if(r.isPlayer && strikeQueued){ strikeQueued=false; if(r.lanceCD<=0 && !stunned) doStrike(r); }
   if(wantStrike && r.lanceCD<=0 && !stunned) doStrike(r);
   if(r.lanceAnim>0) r.lanceAnim-=dt;
-  if(r._pendingHit){ r._pendingHit.t-=dt; if(r._pendingHit.t<=0){ landHit(r, r._pendingHit.tgt); r._pendingHit=null; } }
+  if(r._pendingHit){ r._pendingHit.t-=dt; if(r._pendingHit.t<=0){ landHit(r, r._pendingHit.tgt, r._pendingHit.quality); r._pendingHit=null; } }
 
   // knockback impulse
   if(r._knockMag>0){ const k=Math.min(r._knockMag, r._knockMag*dt*8); r.pos.addScaledVector(r._knockDir,k); r._knockMag-=k; if(r._knockMag<0.4)r._knockMag=0; }
