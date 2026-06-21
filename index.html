@@ -578,6 +578,11 @@ function cragTexture(){
   const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(28,28); t.colorSpace=THREE.SRGBColorSpace; return t;
 }
 const grassTex=grassTexture(), roadTex=roadTexture(), heathTex=heathTexture(), snowGroundTex=snowGroundTexture(), cragTex=cragTexture();
+// red/white racing curb (rumble strip) texture
+function curbTexture(){ const c=document.createElement('canvas'); c.width=8; c.height=32; const x=c.getContext('2d');
+  for(let i=0;i<4;i++){ x.fillStyle=i%2?'#d23426':'#f4f1ea'; x.fillRect(0,i*8,8,8); }
+  const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.colorSpace=THREE.SRGBColorSpace; return t; }
+const curbTex=curbTexture();
 function biomeGroundTex(){ const th=curTrack.theme; return th==='winter'?snowGroundTex : th==='crag'?cragTex : th==='highland'?heathTex : grassTex; }
 const BUNT_COLS=[0xe23b2e,0x2f7fd0,0x37b85e,0xe0b21f,0x9a3bd0,0xee7722];
 // game settings live near the top of the module (see after the imports)
@@ -818,7 +823,7 @@ const TRACKS=[
      return h; } },
 ];
 
-const KEEP_TEX=new Set([grassTex,roadTex,heathTex,snowGroundTex,cragTex,stoneWallTex,crowdTex,birdTex,grassNormalTex,roadNormalTex,stoneNormalTex,waterNormalTex,woodTex,metalTex,fabricTex,coatTex,grassBladeTex,contactShadowTex,butterflyTex,...TEAM_CREST,...TEAM_BANNER]);
+const KEEP_TEX=new Set([grassTex,roadTex,heathTex,snowGroundTex,cragTex,curbTex,stoneWallTex,crowdTex,birdTex,grassNormalTex,roadNormalTex,stoneNormalTex,waterNormalTex,woodTex,metalTex,fabricTex,coatTex,grassBladeTex,contactShadowTex,butterflyTex,...TEAM_CREST,...TEAM_BANNER]);
 function disposeObj(o){ o.traverse(n=>{ if(n.geometry)n.geometry.dispose();
   if(n.material){ const a=Array.isArray(n.material)?n.material:[n.material];
     a.forEach(m=>{ if(m.map&&!KEEP_TEX.has(m.map))m.map.dispose(); m.dispose(); }); } }); }
@@ -908,6 +913,22 @@ function buildGround(){
   m.receiveShadow=true; W.add(m);
 }
 
+// a raised red/white rumble curb hugging each road edge — the biggest "racing game" tell
+function buildCurbs(){
+  const segs=280, CW=1.4, lift=0.22, curbMat=new THREE.MeshStandardMaterial({map:curbTex, roughness:.7});
+  for(const sgn of [1,-1]){
+    const pos=[],uv=[],idx=[];
+    for(let i=0;i<=segs;i++){ const u=(i%segs)/segs; const p=curve.getPointAt(u); const t=curve.getTangentAt(u);
+      const n=new THREE.Vector3(-t.z,0,t.x).normalize().multiplyScalar(sgn);
+      const ix=p.x+n.x*(HALF_W-CW*0.4), iz=p.z+n.z*(HALF_W-CW*0.4), ox=p.x+n.x*(HALF_W+CW*0.6), oz=p.z+n.z*(HALF_W+CW*0.6);
+      pos.push(ix,terrainHeight(ix,iz)+lift,iz, ox,terrainHeight(ox,oz)+lift,oz); uv.push(0,i*0.7, 1,i*0.7); }
+    for(let i=0;i<segs;i++){ const a=i*2; idx.push(a,a+1,a+2, a+1,a+3,a+2); }
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2)); g.setIndex(idx); g.computeVertexNormals();
+    const m=new THREE.Mesh(g,curbMat); m.receiveShadow=true; W.add(m);
+  }
+}
 // road ribbon draped over the terrain
 function buildRoadMesh(){
   const segs=560, pos=[],uv=[],idx=[]; const CROWN=0.35;   // centre is raised slightly (camber)
@@ -923,6 +944,7 @@ function buildRoadMesh(){
   g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2)); g.setIndex(idx); g.computeVertexNormals();
   const laneColor = curTrack.ice?0xbcd6ea : curTrack.theme==='crag'?0xd6d0c4 : curTrack.theme==='highland'?0xdadcc2 : 0xffffff;
   const road=new THREE.Mesh(g,new THREE.MeshStandardMaterial({map:roadTex, normalMap:roadNormalTex, normalScale:new THREE.Vector2(0.25,0.25), roughness:curTrack.ice?0.5:0.92, metalness:curTrack.ice?0.12:0, color:laneColor})); road.receiveShadow=true; W.add(road);
+  buildCurbs();
 }
 
 // torch brazier with a flickering flame (animated in step via flames[])
@@ -1880,15 +1902,27 @@ function linkBar(ax,ay,az,bx,by,bz,mat,rad){
   return m;
 }
 
+// stylised fresnel rim-light injected into a MeshStandardMaterial — gives a crisp edge pop (toon-ish)
+function rimLight(mat, col=0x9fc6ff, power=2.6, strength=0.4){
+  mat.onBeforeCompile = (sh)=>{
+    sh.uniforms.uRimCol={value:new THREE.Color(col)}; sh.uniforms.uRimPow={value:power}; sh.uniforms.uRimStr={value:strength};
+    sh.fragmentShader = 'uniform vec3 uRimCol; uniform float uRimPow; uniform float uRimStr;\n'+sh.fragmentShader.replace(
+      '#include <dithering_fragment>',
+      'float _rim=pow(1.0-clamp(dot(normalize(normal),normalize(vViewPosition)),0.0,1.0),uRimPow);\n  gl_FragColor.rgb+=uRimCol*_rim*uRimStr;\n  #include <dithering_fragment>');
+  };
+  mat.customProgramCacheKey=()=>'rim_'+col+'_'+power+'_'+strength;
+  return mat;
+}
+
 function makeRider(team){
   const g=new THREE.Group();
-  const coatMat =new THREE.MeshStandardMaterial({color:team.coat, roughness:.72, map:coatTex});
+  const coatMat =rimLight(new THREE.MeshStandardMaterial({color:team.coat, roughness:.72, map:coatTex}), 0xaeccff, 2.8, 0.34);
   const darkMat =new THREE.MeshStandardMaterial({color:0x1f160e, roughness:.9});
   const hoofMat =new THREE.MeshStandardMaterial({color:0x2a2622, roughness:.7});
-  const teamMat =new THREE.MeshStandardMaterial({color:team.c, roughness:.55, metalness:.15, side:THREE.DoubleSide, map:fabricTex});
-  const trimMat =new THREE.MeshStandardMaterial({color:0xe8c64a, roughness:.4, metalness:.5});
+  const teamMat =rimLight(new THREE.MeshStandardMaterial({color:team.c, roughness:.5, metalness:.15, side:THREE.DoubleSide, map:fabricTex}), team.accent, 2.2, 0.5);
+  const trimMat =new THREE.MeshStandardMaterial({color:0xe8c64a, roughness:.34, metalness:.6});
   const accentMat=new THREE.MeshStandardMaterial({color:team.accent, roughness:.5, emissive:team.accent, emissiveIntensity:.18, side:THREE.DoubleSide});
-  const steelMat =new THREE.MeshStandardMaterial({color:0xd2dae4, roughness:.34, metalness:.85, map:metalTex, envMapIntensity:1.35});
+  const steelMat =rimLight(new THREE.MeshStandardMaterial({color:0xd6dee8, roughness:.3, metalness:.9, map:metalTex, envMapIntensity:1.35}), 0xcfe2ff, 2.0, 0.55);
   const reinMat  =new THREE.MeshStandardMaterial({color:0x2a1a10, roughness:.9});
   const leatherMat=new THREE.MeshStandardMaterial({color:0x5a3a22, roughness:.8});
   const crestTex=TEAM_CREST[TEAM.indexOf(team)];
