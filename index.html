@@ -1648,9 +1648,9 @@ function buildHighmoorLandmarks(){
   if(curTrack.catapult) buildCatapult(300,-285);                              // on the fort knoll
   buildEagles();
 }
-// a cave/tunnel you drive THROUGH: dark inner walls + a stone ceiling over the lane
+// a cave/tunnel you drive THROUGH: stone walls + ceiling over the lane, lit by torches
 function buildTunnel(a,b){
-  const dark=new THREE.MeshStandardMaterial({color:0x46423b, roughness:1, map:stoneWallTex, normalMap:stoneNormalTex, normalScale:new THREE.Vector2(0.9,0.9), side:THREE.DoubleSide});
+  const dark=new THREE.MeshStandardMaterial({color:0x6a655b, roughness:1, map:stoneWallTex, normalMap:stoneNormalTex, normalScale:new THREE.Vector2(0.9,0.9), side:THREE.DoubleSide, emissive:0x14110c, emissiveIntensity:1});
   const H=8.5, off=HALF_W+WALL_INNER+0.4, span=((b-a)%N+N)%N;
   for(let k=0;k<=span;k++){ const i=(a+k)%N, p=waypoints[i], t=tangents[i]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
     const cy=terrainHeight(p.x,p.z), ang=Math.atan2(t.x,t.z);
@@ -1658,6 +1658,12 @@ function buildTunnel(a,b){
       const ceil=new THREE.Mesh(new THREE.BoxGeometry(off*2+2,1.0,segLen),dark); ceil.position.set((p.x+p2.x)/2,(cy+cy2)/2+H,(p.z+p2.z)/2); ceil.rotation.y=Math.atan2(t.x,t.z); ceil.receiveShadow=true; W.add(ceil);
       for(const s of [1,-1]){ const wx=p.x+n.x*s*off, wz=p.z+n.z*s*off; const wall=new THREE.Mesh(new THREE.BoxGeometry(1.2,H+1,segLen),dark); wall.position.set((wx+p2.x+n.x*s*off)/2,cy+(H+1)/2,(wz+p2.z+n.z*s*off)/2); wall.rotation.y=ang; wall.castShadow=true; wall.receiveShadow=true; W.add(wall); } }
     if(k===0||k===span){ const arch=new THREE.Mesh(new THREE.BoxGeometry(off*2+4,2.2,1.6),dark); arch.position.set(p.x,cy+H+1,p.z); arch.rotation.y=ang; W.add(arch); }   // cave-mouth lintel
+    // wall torches that actually light the cave (point light + flickering flame)
+    if(k%4===2){ for(const s of [1,-1]){ const tx=p.x+n.x*s*(off-0.7), tz=p.z+n.z*s*(off-0.7), ty=cy+4.5;
+      const bracket=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,1.0,5), new THREE.MeshStandardMaterial({color:0x3a2a1a,roughness:.9})); bracket.position.set(tx,ty-0.4,tz); W.add(bracket);
+      const flame=new THREE.Mesh(new THREE.ConeGeometry(0.42,1.5,7), new THREE.MeshBasicMaterial({color:0xffb24a,transparent:true,opacity:0.95})); flame.position.set(tx,ty+0.6,tz); W.add(flame);
+      const lt=new THREE.PointLight(0xff9436, 3.2, 38, 1.4); lt.position.set(tx,ty+1.2,tz); W.add(lt);
+      flames.push({a:flame, b:flame, ph:Math.random()*6.28}); } }
   }
 }
 // a trebuchet on the fort that lobs boulders onto the lane
@@ -2946,7 +2952,7 @@ function step(dt){
   // driving through a tunnel darkens the world
   if(curTrack && curTrack.tunnel){ const pl=player(); let inTun=false;
     if(pl){ const ni=globalNearest(pl.pos); const a=curTrack.tunnel[0], len=((curTrack.tunnel[1]-a)%N+N)%N, d=((ni-a)%N+N)%N; inTun = d<=len && dist2D(pl.pos.x,pl.pos.z,waypoints[ni].x,waypoints[ni].z)<HALF_W+4; }
-    const want=inTun?_baseExp*0.5:_baseExp; renderer.toneMappingExposure += (want-renderer.toneMappingExposure)*Math.min(1,dt*4); }
+    const want=inTun?_baseExp*0.82:_baseExp; renderer.toneMappingExposure += (want-renderer.toneMappingExposure)*Math.min(1,dt*4); }
   // aurora curtains shimmer over Wyrmspire
   if(aurora.grp.visible){ for(const b of aurora.bands){ b.m.material.opacity=0.3+0.22*Math.sin(worldTime*0.5+b.ph); b.m.position.x=b.base+Math.sin(worldTime*0.2+b.ph)*45; } }
   // river mist drifts and breathes; dust devils wander the crag
