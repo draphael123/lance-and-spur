@@ -266,6 +266,8 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { VignetteShader } from 'three/addons/shaders/VignetteShader.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 const rbox=(w,h,d,r)=>new RoundedBoxGeometry(w,h,d,2,r!==undefined?r:Math.min(w,h,d)*0.18);
@@ -431,11 +433,11 @@ let envRT=null;
 function buildEnv(tod){ const eq=skyEquirect(tod); const rt=pmrem.fromEquirectangular(eq); if(envRT)envRT.dispose(); envRT=rt; scene.environment=rt.texture; eq.dispose(); }
 buildEnv('day');
 
-// composer / bloom / colour-grade / vignette
+// composer / bloom / colour-grade / vignette — pass chain is (re)assembled by applyPasses()
 const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
+const renderPass = new RenderPass(scene, camera);
+let ssaoPass=null, smaaPass=null;            // built lazily when first enabled
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.42, 0.85, 0.82);
-composer.addPass(bloom);
 const GradeShader = {
   uniforms:{ tDiffuse:{value:null}, contrast:{value:1.07}, sat:{value:1.14}, warm:{value:0.022} },
   vertexShader:'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
@@ -444,11 +446,23 @@ const GradeShader = {
       float l=dot(col,vec3(0.299,0.587,0.114)); col=mix(vec3(l),col,sat); col.r+=warm; col.b-=warm;
       gl_FragColor=vec4(clamp(col,0.0,1.0),c.a); }`
 };
-const grade=new ShaderPass(GradeShader); composer.addPass(grade);
+const grade=new ShaderPass(GradeShader);
 const vignette = new ShaderPass(VignetteShader);
 vignette.uniforms.offset.value = 1.0; vignette.uniforms.darkness.value = 1.05;
-composer.addPass(vignette);
-composer.addPass(new OutputPass());
+const outputPass = new OutputPass();
+// assemble the post chain from the current graphics settings
+function applyPasses(){
+  if(SETTINGS.ssao && !ssaoPass){ ssaoPass=new SSAOPass(scene,camera,innerWidth,innerHeight); ssaoPass.kernelRadius=10; ssaoPass.minDistance=0.002; ssaoPass.maxDistance=0.12; }
+  if(SETTINGS.aa==='smaa' && !smaaPass){ smaaPass=new SMAAPass(innerWidth,innerHeight); }
+  const chain=[];
+  if(SETTINGS.ssao && ssaoPass) chain.push(ssaoPass); else chain.push(renderPass);
+  chain.push(bloom, grade, vignette);
+  if(SETTINGS.aa==='smaa' && smaaPass) chain.push(smaaPass);
+  chain.push(outputPass);
+  composer.passes=chain;
+  composer.setSize(innerWidth,innerHeight);
+}
+applyPasses();
 
 // ===================================================================
 //  WORLD: ground, track, fences, decoration
@@ -511,6 +525,7 @@ let breakables=[], movers=[];                 // smashable props, roaming hazard
 let worldTime=0;
 const fxShaders=[];   // compiled shaders carrying a uTime uniform (animated water + wind-swept grass)
 const _viewSun=new THREE.Vector3(), _camFwd=new THREE.Vector3();
+let DECALS=null;      // hoisted handle to the decal system (created later)
 const WALL_INNER=3.0, RIDER_RAD=0.85;     // wall inner face = HALF_W+WALL_INNER; collision clamp leaves RIDER_RAD gap
 function terrainHeight(x,z){ return curTrack ? curTrack.height(x,z) : 0; }
 // shared stone texture for the rampart wall (with mossy patches)
@@ -719,6 +734,7 @@ function buildWorld(idx){
   curve=new THREE.CatmullRomCurve3(ctrl,true,'catmullrom',0.5);
   waypoints=curve.getSpacedPoints(N);
   tangents=[]; for(let i=0;i<=N;i++){ const t=curve.getTangentAt((i%N)/N); tangents.push(new THREE.Vector3(t.x,0,t.z).normalize()); }
+  if(DECALS) DECALS.clear();
   curTrack._fordIdx=undefined; curTrack._bridgeXZ=undefined; curTrack._scut=undefined;
   if(curTrack.river) prepareRiver();        // locate the ford & bridge crossings before the terrain is sampled
   if(curTrack.shortcut) prepareShortcut();  // pick the sharpest bend to open as a shortcut (before the wall is built)
@@ -1694,6 +1710,24 @@ const Particles = (()=>{
   return { spawnDust, spawnBurst, spawnSpark, spawnRing, spawnConfetti, spawnSplash, update };
 })();
 
+// ground decals: hoof scuffs & skid marks left behind the horses (fade over a few seconds)
+const Decals=(()=>{
+  const tex=(()=>{ const c=document.createElement('canvas'); c.width=c.height=64; const x=c.getContext('2d');
+    const g=x.createRadialGradient(32,32,1,32,32,30); g.addColorStop(0,'rgba(28,20,12,0.6)'); g.addColorStop(1,'rgba(28,20,12,0)');
+    x.fillStyle=g; x.beginPath(); x.ellipse(32,32,16,28,0,0,7); x.fill(); return new THREE.CanvasTexture(c); })();
+  const POOL=160, items=[]; let ptr=0;
+  const geo=new THREE.PlaneGeometry(1,1); geo.rotateX(-Math.PI/2);   // lie flat, normal up
+  for(let i=0;i<POOL;i++){ const m=new THREE.Mesh(geo, new THREE.MeshBasicMaterial({map:tex,transparent:true,depthWrite:false,opacity:0}));
+    m.visible=false; m.renderOrder=1; scene.add(m); items.push({m,life:0,max:1,o:0}); }
+  function add(x,y,z,ang,scale,dark){ const it=items[ptr]; ptr=(ptr+1)%POOL;
+    it.m.position.set(x,y+0.06,z); it.m.rotation.y=ang+(Math.random()-.5)*0.3; it.m.scale.set(scale,1,scale*1.6);
+    it.o=dark; it.m.material.opacity=dark; it.m.visible=true; it.life=it.max=5+Math.random()*3; }
+  function update(dt){ for(const it of items){ if(it.life<=0) continue; it.life-=dt; if(it.life<=0){ it.m.visible=false; it.m.material.opacity=0; continue; } it.m.material.opacity=it.o*(it.life/it.max); } }
+  function clear(){ for(const it of items){ it.m.visible=false; it.life=0; } }
+  return { add, update, clear };
+})();
+DECALS=Decals;
+
 // ===================================================================
 //  RACERS state
 // ===================================================================
@@ -2315,6 +2349,14 @@ function animateLegs(r,dt){
       Particles.spawnDust(r.pos.x-fwd*2.0, r.pos.y+0.4, r.pos.z-fwz*2.0, 0.7+sf*0.6, r.pos.y+0.1);
     }
   }
+  // hoof scuffs / skid marks on the ground (harder/longer when sliding through a hard turn)
+  if(SETTINGS.decals && state==='race' && r.speed>9){
+    r._decT=(r._decT||0)-dt;
+    const skid=Math.abs(steerInput(r))>0.5 && r.speed>34;
+    if(r._decT<=0 || skid){ r._decT=skid?0.05:0.13;
+      const bx=r.pos.x-Math.sin(r.heading)*2.2, bz=r.pos.z-Math.cos(r.heading)*2.2;
+      Decals.add(bx, terrainHeight(bx,bz), bz, r.heading, 1.0+sf*0.7, skid?0.5:0.32); }
+  }
   // player hoofbeats
   if(r.isPlayer && state==='race' && r.speed>10){ r._hoofT=(r._hoofT||0)-dt;
     if(r._hoofT<=0){ r._hoofT=0.36 - Math.min(0.2,r.speed*0.0022); Audio.sfx.hoof(); } }
@@ -2548,7 +2590,7 @@ function step(dt){
   }
   // ambient motion (runs in every state)
   worldTime+=dt;
-  Particles.update(dt);
+  Particles.update(dt); Decals.update(dt);
   const wind=windMul();
   for(const c of clouds){ c.position.x += 4*dt*(c.userData.slow||1)*wind; if(c.position.x>1400) c.position.x=-1400; }
   // weather: rain streaks / drifting snow, kept around the camera
