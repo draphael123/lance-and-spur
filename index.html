@@ -2663,10 +2663,11 @@ function updateAI(r,dt){
     for(const o of racers){ if(o===r||o.out) continue; const d=dist2D(r.pos.x,r.pos.z,o.pos.x,o.pos.z); if(d<best){best=d;tgt=o;} }
     const dm=SETTINGS.difficulty==='easy'?0.8:SETTINGS.difficulty==='hard'?1.15:1.0;
     if(tgt){ const desired=Math.atan2(tgt.pos.x-r.pos.x, tgt.pos.z-r.pos.z); let dh=normAng(desired-r.heading);
-      r._aiSteer=THREE.MathUtils.clamp(dh*1.7,-1,1);
-      r._aiThr = best>5 ? 1 : -0.1;                    // charge in, ease off when right on top
-      r._aiBoost = best>26 && r.stamina>0.3;
-      r._aiStrike = r.lanceCD<=0 && r.stun<=0 && r.spinout<=0 && best<TUNE.lanceReach+2 && Math.abs(dh)<0.55 && Math.random()<r.aiAggro*dt*3.2*dm;
+      r._aiSteer=THREE.MathUtils.clamp(dh*1.9,-1,1);
+      r._aiThr = best>3.5 ? 1 : 0.25;                  // keep charging in close
+      r._aiBoost = best>22 && r.stamina>0.3;
+      // strike whenever a hit would actually land (target inside the lance cone) — reliable, lively combat
+      r._aiStrike = r.lanceCD<=0 && r.stun<=0 && r.spinout<=0 && !!findStrikeTarget(r) && Math.random()<(0.4+0.4*r.aiAggro)*dm;
     } else { r._aiThr=0; r._aiSteer=0; r._aiBoost=false; r._aiStrike=false; }
     let threatened=false; for(const o of racers){ if(o===r||o.out||o.spinout>0) continue; if(dist2D(r.pos.x,r.pos.z,o.pos.x,o.pos.z)<8){ threatened=true; break; } }
     r._aiBrace = threatened && Math.random()<0.4*dm;
@@ -2943,6 +2944,9 @@ function updateRacer(r,dt){
   if(curTrack.arena){
     const lim=curTrack.arenaR-RIDER_RAD, d=Math.hypot(r.pos.x,r.pos.z);
     if(d>lim){ const nx=r.pos.x/(d||1), nz=r.pos.z/(d||1); r.pos.x=nx*lim; r.pos.z=nz*lim; slideOff(r,nx,nz); }
+    // soft rider separation so they clash at lance range instead of tunnelling through each other
+    for(const o of racers){ if(o===r||o.out) continue; const dx=r.pos.x-o.pos.x, dz=r.pos.z-o.pos.z, dd=Math.hypot(dx,dz);
+      if(dd>0.01 && dd<3.0){ const push=(3.0-dd)*0.5; r.pos.x+=dx/dd*push; r.pos.z+=dz/dd*push; } }
     resolveObstacles(r);
     for(const bk of breakables){ if(bk.broken) continue;
       if(dist2D(r.pos.x,r.pos.z,bk.x,bk.z)<bk.r){ bk.broken=true; bk.group.visible=false; r.speed*=0.85;
