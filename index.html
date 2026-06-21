@@ -1952,6 +1952,30 @@ function buildFrostfairLandmarks(){ buildCastle(-250,640); }            // a fro
 function buildPinehollowLandmarks(){
   const wa=curTrack.windmillAt||[300,300]; buildWindmill(wa[0],wa[1]);  // a frozen mill
   buildAvalanche();
+  buildPineForest();                                                    // THE pine forest — its identity
+}
+// a dense snow-laden pine forest lining the track + a deep backdrop — cheap (3 instanced draw calls)
+function buildPineForest(){
+  const positions=[];
+  for(let i=0;i<N;i+=2) for(const s of [1,-1]){ if(Math.random()<0.42) continue;
+    const p=waypoints[i], t=tangents[i]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
+    const off=HALF_W+6+Math.random()*34, x=p.x+n.x*s*off, z=p.z+n.z*s*off;
+    if(distToTrack(x,z)<HALF_W+5) continue; positions.push([x,z,0.85+Math.random()*0.7]); }
+  for(let i=0;i<280;i++){ const ang=Math.random()*6.28, rad=120+Math.random()*380, x=Math.cos(ang)*rad, z=Math.sin(ang)*rad;
+    if(distToTrack(x,z)<HALF_W+44) continue; positions.push([x,z,0.95+Math.random()*0.8]); }
+  const C=positions.length;
+  const trunkG=new THREE.CylinderGeometry(0.45,0.75,4,5); trunkG.translate(0,2,0);
+  const coneG=new THREE.ConeGeometry(3.5,13,7); coneG.translate(0,10.5,0);
+  const capG=new THREE.ConeGeometry(3.0,5.2,7); capG.translate(0,16,0);
+  const trunks=new THREE.InstancedMesh(trunkG,new THREE.MeshStandardMaterial({color:0x4a3420,roughness:.9}),C);
+  const cones=new THREE.InstancedMesh(coneG,new THREE.MeshStandardMaterial({color:0x2f5a40,roughness:.92,flatShading:true}),C);
+  const caps=new THREE.InstancedMesh(capG,new THREE.MeshStandardMaterial({color:0xeef4f8,roughness:1,flatShading:true}),C);
+  trunks.castShadow=cones.castShadow=true;
+  const dummy=new THREE.Object3D();
+  for(let i=0;i<C;i++){ const [x,z,sc]=positions[i]; dummy.position.set(x,terrainHeight(x,z),z); dummy.rotation.y=Math.random()*6;
+    dummy.scale.set(sc,sc*(0.9+Math.random()*0.5),sc); dummy.updateMatrix();
+    trunks.setMatrixAt(i,dummy.matrix); cones.setMatrixAt(i,dummy.matrix); caps.setMatrixAt(i,dummy.matrix); }
+  W.add(trunks,cones,caps);
 }
 function buildAvalanche(){
   const idx=(N*0.55)|0; const p=waypoints[idx], t=tangents[idx]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
