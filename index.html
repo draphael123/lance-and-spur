@@ -185,6 +185,10 @@
     <div class="trackCard" data-track="1"><div class="tname">Highland Run</div><div class="tblurb">Long rolling hills, tight S-bends &amp; a windmill</div></div>
     <div class="trackCard" data-track="2"><div class="tname">Rivermeadow</div><div class="tblurb">Flowing water meadow — a stone bridge, a splashing ford &amp; a watermill</div></div>
     <div class="trackCard" data-track="3"><div class="tname">Highmoor Crag</div><div class="tblurb">A hard hill-climb to a clifftop fort, a fast descent &amp; a gorge bridge</div></div>
+    <div class="trackCard" data-track="4"><div class="tname">Frostfair Flats ❄</div><div class="tblurb">Midwinter fair on a frozen lake — wide, fast &amp; glass-slick ice</div></div>
+    <div class="trackCard" data-track="5"><div class="tname">Pinehollow Pass ❄</div><div class="tblurb">Snowbound pines, tight S-bends &amp; a sweeping avalanche</div></div>
+    <div class="trackCard" data-track="6"><div class="tname">Glasmere Crossing ❄</div><div class="tblurb">A frozen river — a cracking thin-ice ford &amp; an ice bridge below a frozen falls</div></div>
+    <div class="trackCard" data-track="7"><div class="tname">Wyrmspire ❄</div><div class="tblurb">A glacier climb to an ice citadel, a luge descent &amp; a crevasse bridge</div></div>
   </div>
   <div class="btnRow">
     <button class="btn" id="startBtn">RIDE</button>
@@ -350,6 +354,15 @@ const stars=(()=>{ const N2=520, pos=new Float32Array(N2*3);
   const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.BufferAttribute(pos,3));
   const m=new THREE.PointsMaterial({ color:0xeaf0ff, size:5.5, sizeAttenuation:true, transparent:true, opacity:0.9, depthWrite:false, fog:false });
   const pts=new THREE.Points(g,m); pts.visible=false; scene.add(pts); return pts; })();
+// --- aurora curtains (Wyrmspire at night) ---
+const aurora=(()=>{ const grp=new THREE.Group(); grp.visible=false;
+  const c=document.createElement('canvas'); c.width=16; c.height=128; const x=c.getContext('2d');
+  const gr=x.createLinearGradient(0,0,0,128); gr.addColorStop(0,'rgba(120,255,180,0)'); gr.addColorStop(0.4,'rgba(90,240,170,0.55)'); gr.addColorStop(0.72,'rgba(120,160,255,0.4)'); gr.addColorStop(1,'rgba(150,120,255,0)');
+  x.fillStyle=gr; x.fillRect(0,0,16,128); const tex=new THREE.CanvasTexture(c);
+  const bands=[];
+  for(let i=0;i<5;i++){ const m=new THREE.Mesh(new THREE.PlaneGeometry(720,260), new THREE.MeshBasicMaterial({map:tex,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,opacity:0.4,fog:false,side:THREE.DoubleSide}));
+    m.position.set((i-2)*200, 430+Math.random()*60, -950); m.rotation.y=(Math.random()-.5)*0.3; grp.add(m); bands.push({m, ph:Math.random()*6.28, base:(i-2)*200}); }
+  scene.add(grp); return {grp, bands}; })();
 
 // --- drifting clouds ---
 function cloudTexture(){
@@ -717,6 +730,36 @@ const TRACKS=[
      const ch=highmoorChasm(x,z);
      if(ch>0 && distToTrack(x,z)>HALF_W+6) h-=ch;                      // the gorge drops away off the lane
      return h; } },
+ // ---------- the Frostmere Circuit (winter): slick ice + deep snow ----------
+ { name:'Frostfair Flats', blurb:'A midwinter fair on a frozen lake — wide, fast & glass-slick ice', roadW:27,
+   ctrl:[[0,-300],[190,-240],[300,-60],[270,120],[140,270],[-60,300],[-240,220],[-320,40],[-260,-160],[-110,-280]],
+   sky:{top:'#9fb8d8',mid:'#d6e4ee',bot:'#eef2f4'}, fog:{c:'#dde6ec',near:280,far:980},
+   ground:0xeaf2f6, ice:true, height:(x,z)=>0, grandstands:[20,110,190], landmarks:buildFrostfairLandmarks, shortcut:true },
+ { name:'Pinehollow Pass', blurb:'Snowbound pines, tight S-bends & a sweeping avalanche', roadW:24,
+   ctrl:[[0,-340],[170,-316],[240,-192],[156,-96],[300,-4],[240,144],[104,184],[168,304],[-44,324],[-192,248],[-132,104],[-304,64],[-336,-104],[-208,-236],[-92,-304]],
+   sky:{top:'#8aa6c8',mid:'#cddeea',bot:'#e8eef2'}, fog:{c:'#d8e2ea',near:260,far:920},
+   ground:0xe6eef2, ice:true, grandstands:[16,150], windmillAt:[300,300], landmarks:buildPinehollowLandmarks, shortcut:true,
+   height:(x,z)=>{ let h=Math.sin(x*0.0055+0.5)*9 + Math.cos(z*0.006-0.3)*8 + Math.sin((x*0.7-z)*0.003)*5;
+     const dx=x-300,dz=z-300; h+=20*Math.exp(-(dx*dx+dz*dz)/30000); const vx=x+260,vz=z+140; h-=9*Math.exp(-(vx*vx+vz*vz)/45000); return h; } },
+ { name:'Glasmere Crossing', blurb:'A frozen river — a cracking thin-ice ford & an ice bridge below a frozen falls', roadW:26,
+   ctrl:[[0,-330],[150,-300],[260,-190],[300,-50],[260,90],[300,210],[190,300],[30,330],[-140,300],[-260,200],[-330,60],[-300,-90],[-200,-220],[-70,-310]],
+   sky:{top:'#93accf',mid:'#d0e0ec',bot:'#f0ead8'}, fog:{c:'#dbe4ea',near:280,far:1000},
+   ground:0xe2eef4, river:true, frozen:true, ice:true, grandstands:[18,120,210], landmarks:buildGlasmereLandmarks,
+   height:(x,z)=>{ let h=Math.sin(x*0.004+0.3)*2 + Math.cos(z*0.0045-0.2)*1.8;
+     const d=riverDist(x,z); let dip=4.0*Math.exp(-(d*d)/520);
+     const b=curTrack&&curTrack._bridgeXZ;
+     if(b){ const bd=(x-b.x)*(x-b.x)+(z-b.z)*(z-b.z); if(bd<1000 && distToTrack(x,z)<HALF_W+5) dip=0; }
+     return h-dip; } },
+ { name:'Wyrmspire', blurb:'A glacier climb to an ice citadel, a luge descent & a crevasse bridge', roadW:24,
+   ctrl:[[0,-330],[150,-300],[280,-230],[340,-90],[300,60],[330,200],[200,310],[40,340],[-130,320],[-280,250],[-345,90],[-300,-90],[-210,-230],[-80,-320]],
+   sky:{top:'#3a4a6e',mid:'#6a86aa',bot:'#b8c8d6'}, fog:{c:'#aebccc',near:280,far:1000},
+   ground:0xdfe6ee, ice:true, bridge:true, aurora:true, grandstands:[120,235], landmarks:buildWyrmspireLandmarks,
+   height:(x,z)=>{ let h=Math.sin(x*0.006+0.4)*7 + Math.cos(z*0.0065-0.2)*6;
+     const cx=x-300,cz=z+285; h+=70*Math.exp(-(cx*cx+cz*cz)/82000);
+     const rx=x+300,rz=z-150; h+=30*Math.exp(-(rx*rx+rz*rz)/60000);
+     const ch=highmoorChasm(x,z);
+     if(ch>0 && distToTrack(x,z)>HALF_W+6) h-=ch;
+     return h; } },
 ];
 
 const KEEP_TEX=new Set([grassTex,roadTex,stoneWallTex,crowdTex,birdTex,grassNormalTex,roadNormalTex,stoneNormalTex,waterNormalTex,woodTex,metalTex,fabricTex,coatTex,grassBladeTex,contactShadowTex,butterflyTex,...TEAM_CREST,...TEAM_BANNER]);
@@ -761,6 +804,7 @@ function applyTimeOfDay(){
   sun.color.set(p.sun); sun.intensity=p.si; hemi.color.set(p.hemi); hemi.intensity=p.hi;
   scene.fog.color.set(p.fog||curTrack.fog.c); renderer.toneMappingExposure=p.exp;
   setNight(p.night);
+  if(typeof aurora!=='undefined' && aurora) aurora.grp.visible = p.night && !!curTrack.aurora;
   if(typeof applyWeather==='function') applyWeather();
   buildEnv(SETTINGS.timeOfDay);
 }
@@ -811,7 +855,7 @@ function buildRoadMesh(){
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
   g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2)); g.setIndex(idx); g.computeVertexNormals();
-  const road=new THREE.Mesh(g,new THREE.MeshStandardMaterial({map:roadTex, normalMap:roadNormalTex, normalScale:new THREE.Vector2(0.25,0.25), roughness:.92})); road.receiveShadow=true; W.add(road);
+  const road=new THREE.Mesh(g,new THREE.MeshStandardMaterial({map:roadTex, normalMap:roadNormalTex, normalScale:new THREE.Vector2(0.25,0.25), roughness:curTrack.ice?0.5:0.92, metalness:curTrack.ice?0.12:0, color:curTrack.ice?0xbcd6ea:0xffffff})); road.receiveShadow=true; W.add(road);
 }
 
 // torch brazier with a flickering flame (animated in step via flames[])
@@ -1018,7 +1062,7 @@ function buildProps(){
 function buildNature(){
   const bushMat=[0x3f7a34,0x4c8a3a,0x356a2c].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:1}));
   const rockMat=new THREE.MeshStandardMaterial({color:0x8a8a92,roughness:1, flatShading:true});
-  const highland=curTrack.ground===0xdfeccb;
+  const highland=curTrack.ground===0xdfeccb || !!curTrack.ice;
   for(let i=0;i<64;i++){ const x=(Math.random()-.5)*1150, z=(Math.random()-.5)*1150; if(distToTrack(x,z)<HALF_W+6) continue;
     const b=new THREE.Mesh(new THREE.SphereGeometry(1.5+Math.random()*1.3,7,6), bushMat[i%3]); b.scale.y=0.7;
     b.position.set(x,terrainHeight(x,z)+0.8,z); b.castShadow=true; W.add(b); }
@@ -1110,7 +1154,7 @@ function buildMovers(){
 }
 
 function buildDeco(){
-  const highland=curTrack.ground===0xdfeccb;
+  const highland=curTrack.ground===0xdfeccb || !!curTrack.ice;
   // grandstands just outside the track (solid obstacles)
   for(const idx of curTrack.grandstands){
     const p=waypoints[idx], t=tangents[idx]; const nrm=new THREE.Vector3(-t.z,0,t.x).normalize();
@@ -1340,8 +1384,19 @@ function buildRiverMesh(){
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
   g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2)); g.setIndex(idx); g.computeVertexNormals();
-  const water=new THREE.Mesh(g, makeWaterMaterial(0.84));
+  const frozen=!!curTrack.frozen;
+  const water=new THREE.Mesh(g, frozen
+    ? new THREE.MeshStandardMaterial({color:0xcfe2f0, roughness:0.28, metalness:0.12, normalMap:waterNormalTex, normalScale:new THREE.Vector2(0.12,0.12), envMapIntensity:1.3})
+    : makeWaterMaterial(0.84));
   W.add(water);
+  if(frozen){   // a sheet of ice: snow-dusted banks + icicle clusters, no reeds/lilies/butterflies
+    const snowMat=new THREE.MeshStandardMaterial({color:0xeef4f8,roughness:1});
+    for(let i=0;i<60;i++){ const u=Math.random(); const p=rc.getPointAt(u); const t=rc.getTangentAt(u); const n=new THREE.Vector3(-t.z,0,t.x).normalize();
+      const sgn=Math.random()<.5?1:-1; const rx=p.x+n.x*sgn*(half+1+Math.random()*4), rz=p.z+n.z*sgn*(half+1+Math.random()*4);
+      if(distToTrack(rx,rz)<HALF_W+2) continue;
+      const r=0.5+Math.random()*1.3; const mound=new THREE.Mesh(new THREE.SphereGeometry(r,6,5),snowMat); mound.scale.y=0.5; mound.position.set(rx,terrainHeight(rx,rz)+r*0.3,rz); mound.castShadow=true; W.add(mound); }
+    return;
+  }
   // reeds + butterflies along the banks
   const reedMat=new THREE.MeshStandardMaterial({color:0x6a9a4a,roughness:1});
   for(let i=0;i<70;i++){ const u=Math.random(); const p=rc.getPointAt(u); const t=rc.getTangentAt(u); const n=new THREE.Vector3(-t.z,0,t.x).normalize();
@@ -1388,10 +1443,10 @@ function buildWatermill(x,z){ const g=new THREE.Group(); const y=terrainHeight(x
   for(let k=0;k<8;k++){ const a=k/8*Math.PI*2; const spoke=new THREE.Mesh(new THREE.BoxGeometry(0.3,6.6,0.3),wood); spoke.rotation.z=a; wheel.add(spoke);
     const pad=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.7,1.5),wood); pad.position.set(Math.cos(a)*3.3,Math.sin(a)*3.3,0); pad.rotation.z=a; wheel.add(pad); }
   wheel.add(new THREE.Mesh(new THREE.TorusGeometry(3.3,0.18,6,20),wood));
-  g.add(wheel); windmills.push({node:wheel, speed:0.7});
+  g.add(wheel); windmills.push({node:wheel, speed:curTrack.frozen?0:0.7});   // a frozen mill stands still
   g.position.set(x,y,z); g.rotation.y=Math.atan2(-x,-z); g.traverse(o=>{o.castShadow=true;}); W.add(g);
   obstacles.push({type:'circle',x,z,r:7,slow:0.4});
-  wheelSpots.push({x, y:y+3, z});   // positional water-wheel splash/creak
+  if(!curTrack.frozen) wheelSpots.push({x, y:y+3, z});   // positional water-wheel splash/creak
 }
 // stone arch bridge carrying the lane across the river
 function buildStoneBridge(idx){
@@ -1418,14 +1473,14 @@ function buildRivermeadowLandmarks(){
 }
 
 // ---------- Highmoor Crag (vertical track) ----------
-function buildClifftopFort(x,z){
+function buildClifftopFort(x,z,ice){
   const g=new THREE.Group(); const y=terrainHeight(x,z);
-  const stone=new THREE.MeshStandardMaterial({color:0xb2a890,roughness:.96, map:stoneWallTex, normalMap:stoneNormalTex, normalScale:new THREE.Vector2(0.7,0.7)});
+  const stone=new THREE.MeshStandardMaterial({color:ice?0xcfe0ee:0xb2a890,roughness:ice?0.55:0.96, metalness:ice?0.1:0, map:stoneWallTex, normalMap:stoneNormalTex, normalScale:new THREE.Vector2(0.7,0.7)});
   const keep=new THREE.Mesh(new THREE.BoxGeometry(22,26,22),stone); keep.position.y=13; g.add(keep);
   for(let m=-9;m<=9;m+=6){ for(const mz of [-11,11]){ const a=new THREE.Mesh(new THREE.BoxGeometry(3,4,3),stone); a.position.set(m,28,mz); g.add(a); }
     for(const mx of [-11,11]){ const b=new THREE.Mesh(new THREE.BoxGeometry(3,4,3),stone); b.position.set(mx,28,m); g.add(b); } }
   for(const cx of [-11,11]) for(const cz of [-11,11]){ const tw=new THREE.Mesh(new THREE.CylinderGeometry(4,4.6,34,10),stone); tw.position.set(cx,17,cz); g.add(tw);
-    const roof=new THREE.Mesh(new THREE.ConeGeometry(5,8,10),new THREE.MeshStandardMaterial({color:0x6b3b8a,roughness:.8})); roof.position.set(cx,38,cz); g.add(roof); }
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(5,8,10),new THREE.MeshStandardMaterial({color:ice?0x9fc0e0:0x6b3b8a,roughness:.7,metalness:ice?0.1:0})); roof.position.set(cx,38,cz); g.add(roof); }
   const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,12,6),new THREE.MeshStandardMaterial({color:0x6b4a24})); pole.position.set(0,38,0); g.add(pole);
   const flag=new THREE.Mesh(new THREE.PlaneGeometry(7,4),new THREE.MeshStandardMaterial({color:0xb53024,side:THREE.DoubleSide})); flag.position.set(3.4,42,0); g.add(flag);
   swayers.push({node:flag,ph:Math.random()*6,amp:0.2,axis:'y',base:0});
@@ -1460,6 +1515,40 @@ function buildHighmoorLandmarks(){
   if(bi<0) for(let i=0;i<N;i++){ const w=waypoints[i]; if(highmoorChasm(w.x,w.z)>10){ bi=i; break; } }
   if(bi>=0) buildGorgeBridge(bi);
   buildDustDevils();
+}
+
+// ---------- the Frostmere Circuit (winter) landmarks ----------
+function buildFrostfairLandmarks(){ buildCastle(-250,640); }            // a frost-bound keep on the horizon
+function buildPinehollowLandmarks(){
+  const wa=curTrack.windmillAt||[300,300]; buildWindmill(wa[0],wa[1]);  // a frozen mill
+  buildAvalanche();
+}
+function buildAvalanche(){
+  const idx=(N*0.55)|0; const p=waypoints[idx], t=tangents[idx]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
+  const g=new THREE.Group(); const snow=new THREE.MeshStandardMaterial({color:0xeef4f8,roughness:1});
+  for(let k=0;k<7;k++){ const b=new THREE.Mesh(new THREE.SphereGeometry(1.8+Math.random()*1.8,8,7),snow);
+    b.position.set((Math.random()-.5)*6,1.5+Math.random()*2.5,(Math.random()-.5)*6); g.add(b); }
+  g.traverse(o=>{ if(o.isMesh)o.castShadow=true; }); W.add(g);
+  const obs={type:'circle',x:p.x,z:p.z,r:5.5,slow:0.22}; obstacles.push(obs);
+  movers.push({group:g, obs, cx:p.x, cz:p.z, nx:n.x, nz:n.z, span:HALF_W+13, ph:Math.random()*6.28, sp:0.75, slam:true, roll:true});
+}
+function buildGlasmereLandmarks(){
+  buildRivermeadowLandmarks();                          // frozen river + ice bridge + stilled mill + willows
+  if(curTrack._bridgeXZ) buildFrozenFalls(curTrack._bridgeXZ);
+}
+function buildFrozenFalls(b){
+  const ice=new THREE.MeshStandardMaterial({color:0xd6e8f4, roughness:0.3, metalness:0.12, transparent:true, opacity:0.9});
+  const t=curTrack._bridgeIdx!==undefined?tangents[curTrack._bridgeIdx]:tangents[0]; const dir=new THREE.Vector3(t.x,0,t.z).normalize();
+  const ox=b.x+dir.x*20, oz=b.z+dir.z*20;
+  for(let k=0;k<8;k++){ const col=new THREE.Mesh(new THREE.CylinderGeometry(0.35+Math.random()*0.5,0.12,6+Math.random()*5,6),ice);
+    const cx=ox+(Math.random()-.5)*8, cz=oz+(Math.random()-.5)*8; col.position.set(cx, terrainHeight(cx,cz)+3+Math.random()*3, cz); col.castShadow=true; W.add(col); }
+}
+function buildWyrmspireLandmarks(){
+  buildClifftopFort(300,-285,true);                     // an ice citadel
+  let bi=-1, best=1e9; for(let i=0;i<N;i++){ const w=waypoints[i]; if(w.x<0 && highmoorChasm(w.x,w.z)>20){ const d=Math.abs(w.z-90); if(d<best){best=d;bi=i;} } }
+  if(bi<0) for(let i=0;i<N;i++){ const w=waypoints[i]; if(highmoorChasm(w.x,w.z)>10){ bi=i; break; } }
+  if(bi>=0) buildGorgeBridge(bi);
+  buildDustDevils();                                    // spindrift swirling over the glacier
 }
 
 buildWorld(0);   // build a backdrop for the menu
@@ -2175,6 +2264,7 @@ function updateRacer(r,dt){
   const offDist=dist2D(r.pos.x,r.pos.z, waypoints[ni].x, waypoints[ni].z);
   const onCut=onShortcut(r.pos.x,r.pos.z);                 // the dirt shortcut drives like the road
   const onGrass=offDist>HALF_W+1.5 && !onCut;
+  const onIce = !!curTrack.ice && !onGrass && !onCut;        // slick ice on the racing line (winter circuit)
   if(r.isPlayer) r._off=onGrass;
 
   // player catch-up ("the catcher"): trailing the pack lends natural speed — no items
@@ -2195,30 +2285,41 @@ function updateRacer(r,dt){
   r._draft=Math.min(1,draft);
   if(r.isPlayer){ if(r._draft>0.5 && !r._draftCue){ r._draftCue=true; toast('Slipstream!'); } else if(r._draft<0.2) r._draftCue=false; }
 
-  // speed dynamics
+  // speed dynamics — ice keeps your momentum but robs grip (weak accel/brake, low drag = slide)
+  const iceGrip=onIce?0.5:1, iceDrag=onIce?0.45:1, iceAccel=onIce?0.82:1, iceBrake=onIce?0.4:1;
   const maxV = (onGrass?TUNE.grassMax : (boosting?TUNE.boostMax:TUNE.maxSpeed)) * (r.bracing?0.7:1) * catchMul * (1+r._draft*0.16);
-  if(thr>0) r.speed += TUNE.accel*thr*dt*(boosting?1.5:1)*catchMul;
-  else if(thr<0) r.speed += (r.speed>0? -TUNE.brake : -TUNE.accel)*Math.abs(thr)*dt;
+  if(thr>0) r.speed += TUNE.accel*thr*dt*(boosting?1.5:1)*catchMul*iceAccel;
+  else if(thr<0) r.speed += (r.speed>0? -TUNE.brake*iceBrake : -TUNE.accel)*Math.abs(thr)*dt;
   if(r._draft>0) r.speed += r._draft*TUNE.accel*0.4*dt;                               // slingshot pull in the wake
-  r.speed -= r.speed*(onGrass?TUNE.grassDrag:TUNE.drag)*(1-r._draft*0.5)*dt;
+  r.speed -= r.speed*(onGrass?TUNE.grassDrag:TUNE.drag)*iceDrag*(1-r._draft*0.5)*dt;
   // slope: uphill saps speed, downhill feeds it
   const fwx=Math.sin(r.heading), fwz=Math.cos(r.heading);
   const slope=(terrainHeight(r.pos.x+fwx*3, r.pos.z+fwz*3) - r.pos.y)/3;
   r.speed -= slope*TUNE.slopeForce*dt;
   if(r._winded>0) r.speed -= r.speed*1.4*dt;                                          // the stumble when you over-spur
   r.speed=Math.max(0,r.speed);
-  // wading the ford: water drags you back and kicks up a splash as you cross
+  // crossing the ford: open water drags & splashes; thin ice cracks (and can give way at speed)
   if(curTrack._fordIdx!==undefined && !onGrass){
     let fd=Math.abs(ni-curTrack._fordIdx); fd=Math.min(fd,N-fd);
-    if(fd<7){ r.speed -= r.speed*1.6*dt; if(r.speed>32) r.speed=32+(r.speed-32)*0.55;
-      if(r.isPlayer){ if(r.speed>8 && Math.random()<0.6) Particles.spawnSplash(r.pos.x,r.pos.y,r.pos.z,1.1);
-        if(r.speed>12 && Math.random()<0.05) Audio.sfx.splash(); } }
+    if(fd<7){
+      if(curTrack.frozen){
+        if(r.isPlayer){ if(Math.random()<0.4) Particles.spawnBurst(r.pos.x,r.pos.y+0.2,r.pos.z,0xd6e8f4,r.pos.y); if(Math.random()<0.05) Audio.sfx.crash(); }
+        if(r.speed>46 && r.spinout<=0 && Math.random()<dt*1.6){      // the ice gives way under a fast, heavy crossing
+          r.spinout=TUNE.spinTime; r.stun=TUNE.spinTime; r.tumble=TUNE.spinTime; r.health=0; r.speed*=0.1; Audio.sfx.splash();
+          Particles.spawnBurst(r.pos.x,r.pos.y,r.pos.z,0xbfe0f0); if(r.isPlayer){ toast('💦 Through the ice!'); shake=0.6; }
+          else if(player()){ /* AI fell */ } }
+      } else {
+        r.speed -= r.speed*1.6*dt; if(r.speed>32) r.speed=32+(r.speed-32)*0.55;
+        if(r.isPlayer){ if(r.speed>8 && Math.random()<0.6) Particles.spawnSplash(r.pos.x,r.pos.y,r.pos.z,1.1);
+          if(r.speed>12 && Math.random()<0.05) Audio.sfx.splash(); }
+      }
+    }
   }
   if(r.speed>maxV) r.speed += (maxV-r.speed)*Math.min(1,dt*3);   // ease toward cap; downhill can briefly exceed
 
   // steering scales with speed (sloppy while winded)
   const speedFac=Math.min(1, r.speed/14);
-  r.heading += steer*TUNE.turn*dt*speedFac*(onGrass?0.7:1)*(r._winded>0?0.45:1)*(r.isPlayer?SETTINGS.steer:1);
+  r.heading += steer*TUNE.turn*dt*speedFac*(onGrass?0.7:1)*iceGrip*(r._winded>0?0.45:1)*(r.isPlayer?SETTINGS.steer:1);
 
   // lance
   if(r.lanceCD>0) r.lanceCD-=dt;
@@ -2243,6 +2344,13 @@ function updateRacer(r,dt){
     slideOff(r,nx,nz);
   }
   resolveObstacles(r);
+  // caught by the avalanche — a heavy stagger, not just a bump
+  if(r._avT>0) r._avT-=dt;
+  for(const mv of movers){ if(!mv.slam) continue;
+    if((r._avT||0)<=0 && dist2D(r.pos.x,r.pos.z,mv.obs.x,mv.obs.z) < mv.obs.r+1.6){
+      r.stun=Math.max(r.stun,0.6); r.tumble=0.6; r.speed*=0.35; r._avT=1.4;
+      if(r.isPlayer){ toast('⚠ AVALANCHE!'); shake=0.55; }
+      else if(player() && player().isPlayer && dist2D(r.pos.x,r.pos.z,player().pos.x,player().pos.z)<70) toast(r.team.name+' is caught in the avalanche!'); } }
   // smash through hay bales (yours or a rival's) — a small scrub + a burst of straw
   for(const bk of breakables){ if(bk.broken) continue;
     if(dist2D(r.pos.x,r.pos.z,bk.x,bk.z)<bk.r){ bk.broken=true; bk.group.visible=false; r.speed*=0.82;
@@ -2620,9 +2728,12 @@ function step(dt){
     for(const sh of fxShaders){ sh.uniforms.uTime.value=worldTime; if(sh.uniforms.uSun) sh.uniforms.uSun.value.copy(_viewSun); if(sh.uniforms.uWind) sh.uniforms.uWind.value=wm; } }
   for(const bf of butterflies){ const a=worldTime*bf.sp+bf.ph;
     bf.s.position.set(bf.cx+Math.cos(a)*bf.r+Math.sin(a*2.3)*1.4, bf.baseY+Math.sin(a*3)*0.8, bf.cz+Math.sin(a)*bf.r+Math.cos(a*1.7)*1.4); }
-  // roaming ox-cart slides across the lane; its collider follows it
+  // roaming ox-cart / sweeping avalanche slides across the lane; its collider follows it
   for(const mv of movers){ const o=Math.sin(worldTime*mv.sp+mv.ph)*mv.span;
-    const x=mv.cx+mv.nx*o, z=mv.cz+mv.nz*o; mv.obs.x=x; mv.obs.z=z; mv.group.position.set(x, terrainHeight(x,z), z); }
+    const x=mv.cx+mv.nx*o, z=mv.cz+mv.nz*o; mv.obs.x=x; mv.obs.z=z; mv.group.position.set(x, terrainHeight(x,z), z);
+    if(mv.roll){ mv.group.rotation.x += dt*Math.cos(worldTime*mv.sp+mv.ph)*mv.sp*mv.span*0.12; } }
+  // aurora curtains shimmer over Wyrmspire
+  if(aurora.grp.visible){ for(const b of aurora.bands){ b.m.material.opacity=0.3+0.22*Math.sin(worldTime*0.5+b.ph); b.m.position.x=b.base+Math.sin(worldTime*0.2+b.ph)*45; } }
   // river mist drifts and breathes; dust devils wander the crag
   for(const mt of mists){ mt.m.material.opacity=mt.baseO*(0.55+0.45*Math.sin(worldTime*0.5+mt.ph));
     mt.m.position.x=mt.x0+Math.sin(worldTime*0.18+mt.ph)*10; }
