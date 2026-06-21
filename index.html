@@ -261,11 +261,13 @@ const skyGeo = new THREE.SphereGeometry(1600, 32, 16);
 const skyMat = new THREE.ShaderMaterial({
   side: THREE.BackSide, depthWrite: false, fog:false,
   uniforms:{ top:{value:new THREE.Color('#2f7bd6')}, mid:{value:new THREE.Color('#bfe2f5')},
-             bot:{value:new THREE.Color('#ffe9c2')}, off:{value:120.0} },
+             bot:{value:new THREE.Color('#ffe9c2')}, off:{value:120.0},
+             sunDir:{value:SUN_DIR.clone()}, sunCol:{value:new THREE.Color('#fff3d2')} },
   vertexShader:`varying vec3 wp; void main(){ wp=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
-  fragmentShader:`uniform vec3 top; uniform vec3 mid; uniform vec3 bot; uniform float off; varying vec3 wp;
-    void main(){ float h=normalize(wp).y; float t=clamp((h*1600.0+off)/1600.0,0.0,1.0);
+  fragmentShader:`uniform vec3 top; uniform vec3 mid; uniform vec3 bot; uniform float off; uniform vec3 sunDir; uniform vec3 sunCol; varying vec3 wp;
+    void main(){ vec3 d=normalize(wp); float h=d.y; float t=clamp((h*1600.0+off)/1600.0,0.0,1.0);
       vec3 c = h<0.06 ? mix(bot,mid,smoothstep(-0.05,0.18,h)) : mix(mid,top,smoothstep(0.05,0.6,h));
+      float sd=max(dot(d,sunDir),0.0); c += sunCol*pow(sd,6.0)*0.32 + sunCol*pow(sd,120.0)*0.55;   // soft sun halo
       gl_FragColor=vec4(c,1.0);}`
 });
 scene.add(new THREE.Mesh(skyGeo, skyMat));
@@ -403,8 +405,10 @@ const SETTINGS={ master:0.8, music:0.55, sfx:0.9, shake:true, quality:'high', mi
 
 // ---------- per-track state (reassigned by buildWorld) ----------
 let curve, waypoints, tangents, N=260, ROAD_W=26, HALF_W=13;
-let curTrack=null, W=null, obstacles=[], windmills=[], crowds=[], birds=[], flames=[], swayers=[], butterflies=[];
+let curTrack=null, W=null, obstacles=[], windmills=[], crowds=[], birds=[], flames=[], swayers=[], butterflies=[], crowdSpots=[];
 let worldTime=0;
+const fxShaders=[];   // compiled shaders carrying a uTime uniform (animated water + wind-swept grass)
+const _viewSun=new THREE.Vector3();
 const WALL_INNER=3.0, RIDER_RAD=0.85;     // wall inner face = HALF_W+WALL_INNER; collision clamp leaves RIDER_RAD gap
 function terrainHeight(x,z){ return curTrack ? curTrack.height(x,z) : 0; }
 // shared stone texture for the rampart wall (with mossy patches)
@@ -605,7 +609,7 @@ function disposeObj(o){ o.traverse(n=>{ if(n.geometry)n.geometry.dispose();
 
 function buildWorld(idx){
   if(W){ scene.remove(W); disposeObj(W); }
-  W=new THREE.Group(); scene.add(W); obstacles=[]; windmills=[]; crowds=[]; birds=[]; flames=[]; swayers=[]; butterflies=[];
+  W=new THREE.Group(); scene.add(W); obstacles=[]; windmills=[]; crowds=[]; birds=[]; flames=[]; swayers=[]; butterflies=[]; crowdSpots=[]; fxShaders.length=0;
   curTrack=TRACKS[idx]; ROAD_W=curTrack.roadW; HALF_W=ROAD_W/2; N=260;
   skyMat.uniforms.top.value.set(curTrack.sky.top); skyMat.uniforms.mid.value.set(curTrack.sky.mid); skyMat.uniforms.bot.value.set(curTrack.sky.bot);
   scene.fog.color.set(curTrack.fog.c); scene.fog.near=curTrack.fog.near; scene.fog.far=curTrack.fog.far;
@@ -626,10 +630,12 @@ function applyTimeOfDay(){
   if(!curTrack) return;
   if(SETTINGS.timeOfDay==='sunset'){
     skyMat.uniforms.top.value.set('#26356a'); skyMat.uniforms.mid.value.set('#e07a3a'); skyMat.uniforms.bot.value.set('#ffce82');
+    skyMat.uniforms.sunCol.value.set('#ff9a4a');
     sun.color.set('#ff9436'); sun.intensity=1.7; hemi.color.set('#ffb079'); hemi.intensity=0.5;
     scene.fog.color.set('#e6a86e'); renderer.toneMappingExposure=1.22;
   } else {
     skyMat.uniforms.top.value.set(curTrack.sky.top); skyMat.uniforms.mid.value.set(curTrack.sky.mid); skyMat.uniforms.bot.value.set(curTrack.sky.bot);
+    skyMat.uniforms.sunCol.value.set('#fff3d2');
     sun.color.set('#ffe7b8'); sun.intensity=2.0; hemi.color.set('#bfe0ff'); hemi.intensity=0.62;
     scene.fog.color.set(curTrack.fog.c); renderer.toneMappingExposure=1.12;
   }
@@ -885,13 +891,39 @@ function buildNature(){
     rk.position.set(x,terrainHeight(x,z)+s*0.35,z); rk.rotation.set(Math.random()*3,Math.random()*3,Math.random()*3); rk.castShadow=true; W.add(rk);
     if(s>2.3) obstacles.push({type:'circle',x,z,r:s*0.9,slow:0.5}); }
 }
+// animated water: PBR material patched to roll with sine waves and throw a sun glint
+function makeWaterMaterial(opacity){
+  const m=new THREE.MeshStandardMaterial({color:0x3f74a8, metalness:.55, roughness:.12, transparent:true, opacity:opacity,
+    envMapIntensity:1.6, normalMap:waterNormalTex, normalScale:new THREE.Vector2(0.35,0.35)});
+  m.onBeforeCompile=(sh)=>{
+    sh.uniforms.uTime={value:0}; sh.uniforms.uSun={value:new THREE.Vector3(0,1,0)}; sh.uniforms.uSky={value:new THREE.Color('#cfe6f5')};
+    sh.vertexShader='uniform float uTime;\n'+sh.vertexShader
+      .replace('#include <beginnormal_vertex>',`#include <beginnormal_vertex>
+        vec3 wq=(modelMatrix*vec4(position,1.0)).xyz;
+        float nx=cos(wq.x*0.06+uTime*1.3)*0.021 + cos((wq.x+wq.z)*0.04+uTime*0.7)*0.010;
+        float nz=cos(wq.z*0.08-uTime*1.1)*0.024 + cos((wq.x+wq.z)*0.04+uTime*0.7)*0.010;
+        objectNormal=normalize(vec3(-nx,1.0,-nz));`)
+      .replace('#include <begin_vertex>',`#include <begin_vertex>
+        vec3 wp=(modelMatrix*vec4(transformed,1.0)).xyz;
+        transformed.y += sin(wp.x*0.06+uTime*1.3)*0.35 + sin(wp.z*0.08-uTime*1.1)*0.3 + sin((wp.x+wp.z)*0.04+uTime*0.7)*0.22;`);
+    sh.fragmentShader='uniform float uTime; uniform vec3 uSun; uniform vec3 uSky;\n'+sh.fragmentShader
+      .replace('#include <emissivemap_fragment>',`#include <emissivemap_fragment>
+        vec3 V=normalize(vViewPosition);
+        float fres=pow(1.0-max(dot(normalize(vNormal),V),0.0),3.0);
+        float glint=pow(max(dot(normalize(vNormal),normalize(uSun)),0.0),60.0);
+        totalEmissiveRadiance += uSky*fres*0.45 + vec3(1.0,0.95,0.84)*glint*1.6;`);
+    m.userData.sh=sh; fxShaders.push(sh);
+  };
+  return m;
+}
 function buildWater(){
   if(curTrack.river) return;                 // river tracks build their own watercourse
   let cx=0,cz=0; for(const p of waypoints){ cx+=p.x; cz+=p.z; } cx/=waypoints.length; cz/=waypoints.length;
   const clear=distToTrack(cx,cz); if(clear<28) return;
   const rad=Math.min(clear-10, 50), y=terrainHeight(cx,cz)-0.5;
-  const water=new THREE.Mesh(new THREE.CircleGeometry(rad,44), new THREE.MeshStandardMaterial({color:0x3f74a8, metalness:.6, roughness:.08, transparent:true, opacity:0.86, envMapIntensity:1.7, normalMap:waterNormalTex, normalScale:new THREE.Vector2(0.35,0.35)}));
-  water.rotation.x=-Math.PI/2; water.position.set(cx,y,cz); W.add(water);
+  const pondGeo=new THREE.CircleGeometry(rad,44); pondGeo.rotateX(-Math.PI/2);   // bake flat so object-Y is world-up (matches the wave shader)
+  const water=new THREE.Mesh(pondGeo, makeWaterMaterial(0.86));
+  water.position.set(cx,y,cz); W.add(water);
   // butterflies fluttering over the water & reeds
   for(let i=0;i<6;i++){ const s=new THREE.Sprite(new THREE.SpriteMaterial({map:butterflyTex,transparent:true,depthWrite:false}));
     s.scale.setScalar(1.4+Math.random()*0.8); W.add(s);
@@ -917,6 +949,7 @@ function buildDeco(){
     const gy=minFootprintY(gx,gz, t, nrm, 25, 9);
     const gs=makeGrandstand(); gs.position.set(gx,gy,gz); gs.lookAt(p.x,gy,p.z); W.add(gs);
     obstacles.push({type:'box', x:gx, z:gz, hx:25, hz:9, rot:gs.rotation.y, slow:0.55});
+    crowdSpots.push({x:gx, z:gz});   // for the crowd-noise swell as you pass
   }
   // tents ring (solid)
   const tentCols=[0xc23b2e,0x2f6fd0,0x2fae5a,0xd0a72f,0x8c3bd0];
@@ -979,6 +1012,15 @@ function buildGrass(){
     card.translate(0,0.575,0); card.rotateY(k*Math.PI/6 + (Math.random()-.5)*0.2); cards.push(card); }
   const clump=mergeGeometries(cards);
   const mat=new THREE.MeshStandardMaterial({map:grassBladeTex, alphaTest:0.3, alphaToCoverage:true, side:THREE.DoubleSide, roughness:1});
+  // wind sway: tips lean on a travelling breeze, roots stay planted (per-clump phase)
+  mat.onBeforeCompile=(sh)=>{ sh.uniforms.uTime={value:0};
+    sh.vertexShader='uniform float uTime;\n'+sh.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
+      vec3 io=(modelMatrix*instanceMatrix*vec4(0.0,0.0,0.0,1.0)).xyz;
+      float ph=io.x*0.15+io.z*0.13;
+      float sway=sin(uTime*1.6+ph)*0.13 + sin(uTime*2.7+ph*1.7)*0.05;
+      float bend=max(transformed.y,0.0);
+      transformed.x += sway*bend; transformed.z += sway*bend*0.6;`);
+    mat.userData.sh=sh; fxShaders.push(sh); };
   const COUNT=9000; const inst=new THREE.InstancedMesh(clump,mat,COUNT);
   const tints=[0x9fbf6a,0x8fb35a,0xb2c97a,0x7ea84e,0xa8c06a,0x96b860].map(c=>new THREE.Color(c));
   const dummy=new THREE.Object3D(); const colA=new Float32Array(COUNT*3); const tmp=new THREE.Color(); let nn=0,guard=0;
@@ -1093,7 +1135,7 @@ function buildRiverMesh(){
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
   g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2)); g.setIndex(idx); g.computeVertexNormals();
-  const water=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0x3f74a8, metalness:.6, roughness:.1, transparent:true, opacity:0.84, normalMap:waterNormalTex, normalScale:new THREE.Vector2(0.4,0.4)}));
+  const water=new THREE.Mesh(g, makeWaterMaterial(0.84));
   W.add(water);
   // reeds + butterflies along the banks
   const reedMat=new THREE.MeshStandardMaterial({color:0x6a9a4a,roughness:1});
@@ -1550,12 +1592,13 @@ const player=()=>racers[0];
 //  AUDIO  (WebAudio synth — light music loop + SFX)
 // ===================================================================
 const Audio = (()=>{
-  let ctx=null, masterGain, musicGain, sfxGain, musicTimer=null, step=0;
+  let ctx=null, masterGain, musicGain, sfxGain, ambGain;
   function init(){ if(ctx) return; const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return; ctx=new AC();
     masterGain=ctx.createGain(); masterGain.connect(ctx.destination);
     musicGain=ctx.createGain(); musicGain.connect(masterGain);
-    sfxGain=ctx.createGain(); sfxGain.connect(masterGain); applyVolumes(); }
-  function applyVolumes(){ if(!ctx) return; masterGain.gain.value=SETTINGS.master; musicGain.gain.value=SETTINGS.music; sfxGain.gain.value=SETTINGS.sfx; }
+    sfxGain=ctx.createGain(); sfxGain.connect(masterGain);
+    ambGain=ctx.createGain(); ambGain.connect(masterGain); applyVolumes(); }
+  function applyVolumes(){ if(!ctx) return; masterGain.gain.value=SETTINGS.master; musicGain.gain.value=SETTINGS.music; sfxGain.gain.value=SETTINGS.sfx; ambGain.gain.value=SETTINGS.sfx*0.85; }
   function resume(){ init(); if(ctx && ctx.state==='suspended') ctx.resume(); }
   function blip(freq,dur,type='square',gain=0.3,dest){ if(!ctx) return; const o=ctx.createOscillator(), g=ctx.createGain();
     o.type=type; o.frequency.value=freq; o.connect(g); g.connect(dest||sfxGain);
@@ -1569,24 +1612,84 @@ const Audio = (()=>{
     lance(){ blip(140,0.10,'sawtooth',0.18); },
     hit(){ noise(0.2,0.45,1400); blip(180,0.18,'sawtooth',0.22); },
     spin(){ for(let i=0;i<6;i++) setTimeout(()=>blip(360+i*110,0.12,'square',0.16), i*45); },
-    hoof(){ noise(0.045,0.10,260); },
+    hoof(){ noise(0.05,0.12,300); blip(90,0.07,'sine',0.10); },   // a fuller two-tone clop
     countdown(n){ blip(n>0?440:720, 0.2, 'square', 0.28); },
     cheer(){ noise(0.7,0.22,2400); },
     splash(){ noise(0.28,0.32,1600); blip(320,0.12,'sine',0.10); },
-    fanfare(){ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>blip(f,0.5,'square',0.28), i*150)); },
+    boost(){ boostWhoosh(); },
+    fanfare(){ [523,659,784,1047,1319].forEach((f,i)=>setTimeout(()=>{ blip(f,0.55,'square',0.26); blip(f*1.5,0.5,'triangle',0.12); }, i*150)); },
   };
-  const prog=[[220,277,330],[196,247,294],[262,330,392],[247,311,370]];
-  function tick(){ if(!ctx) return; const ch=prog[step%prog.length];
-    ch.forEach(f=>blip(f,1.7,'triangle',0.10,musicGain)); blip(ch[0]/2,1.7,'sine',0.14,musicGain); step++; }
-  function startMusic(){ resume(); applyVolumes(); if(musicTimer||!ctx) return; tick(); musicTimer=setInterval(tick,1800); }
-  function stopMusic(){ if(musicTimer){ clearInterval(musicTimer); musicTimer=null; } }
-  return { resume, applyVolumes, startMusic, stopMusic, sfx };
+
+  // ---------- looping noise helper + boost whoosh ----------
+  function makeNoiseSrc(){ const len=ctx.sampleRate*2|0; const buf=ctx.createBuffer(1,len,ctx.sampleRate); const d=buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i]=Math.random()*2-1; const s=ctx.createBufferSource(); s.buffer=buf; s.loop=true; return s; }
+  function boostWhoosh(){ if(!ctx) return; const s=makeNoiseSrc(); const f=ctx.createBiquadFilter(); f.type='bandpass'; f.Q.value=0.8;
+    const g=ctx.createGain(); const t=ctx.currentTime;
+    f.frequency.setValueAtTime(400,t); f.frequency.exponentialRampToValueAtTime(2800,t+0.5);
+    g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.22,t+0.08); g.gain.exponentialRampToValueAtTime(0.0001,t+0.6);
+    s.connect(f); f.connect(g); g.connect(sfxGain); s.start(t); s.stop(t+0.66); }
+
+  // ---------- ambient soundscape (per-track wind / water / crowd / gallop bed) ----------
+  let amb=null;
+  function startAmbient(trackName){ resume(); if(!ctx) return; stopAmbient();
+    amb={ nodes:[] };
+    const mk=(type,freq,Q,gain)=>{ const s=makeNoiseSrc(); const f=ctx.createBiquadFilter(); f.type=type; f.frequency.value=freq; if(Q)f.Q.value=Q;
+      const g=ctx.createGain(); g.gain.value=gain; s.connect(f); f.connect(g); g.connect(ambGain); s.start(); amb.nodes.push(s,f,g); return {f,g}; };
+    amb.wind      = mk('lowpass', 480, 0,   0.10);   // gentle constant wind
+    amb.speedWind = mk('bandpass',900, 0.7, 0.0);    // rises with speed/boost
+    amb.ground    = mk('lowpass', 110, 0,   0.0);    // galloping ground rumble
+    amb.crowd     = mk('lowpass', 320, 0,   0.0);    // murmur, swells near the stands
+    amb.isRiver   = trackName==='Rivermeadow'; if(amb.isRiver) amb.water = mk('bandpass',1100,1.2,0.07);
+    amb.birds     = trackName==='Tourney Green'||trackName==='Rivermeadow';
+    // slow LFO breathes the wind filter so it never sits still
+    const lfo=ctx.createOscillator(), lg=ctx.createGain(); lfo.frequency.value=0.08; lg.gain.value=180;
+    lfo.connect(lg); lg.connect(amb.wind.f.frequency); lfo.start(); amb.nodes.push(lfo,lg);
+  }
+  function stopAmbient(){ if(!amb) return; for(const n of amb.nodes){ try{n.stop&&n.stop();}catch(e){} try{n.disconnect();}catch(e){} } amb=null; }
+  function setEngine(spd, mx, boosting){ if(!ctx||!amb) return; const t=ctx.currentTime, f=Math.max(0,Math.min(1,spd/mx));
+    amb.speedWind.g.gain.setTargetAtTime(f*f*(boosting?0.22:0.12), t, 0.1);
+    amb.speedWind.f.frequency.setTargetAtTime(700+f*1400+(boosting?500:0), t, 0.1);
+    amb.ground.g.gain.setTargetAtTime(f*0.16, t, 0.08); }
+  function setCrowd(a){ if(!ctx||!amb) return; amb.crowd.g.gain.setTargetAtTime(Math.min(0.2,Math.max(0,a)*0.2), ctx.currentTime, 0.25); }
+  function chirp(){ if(!ctx) return; const t=ctx.currentTime, o=ctx.createOscillator(), g=ctx.createGain(); o.type='triangle';
+    const base=1700+Math.random()*1500; o.frequency.setValueAtTime(base,t); o.frequency.exponentialRampToValueAtTime(base*1.5,t+0.05); o.frequency.exponentialRampToValueAtTime(base*0.85,t+0.13);
+    g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.05,t+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t+0.17);
+    o.connect(g); g.connect(ambGain); o.start(t); o.stop(t+0.2); }
+
+  // ---------- tempo-locked medieval-festival music (lookahead scheduler) ----------
+  let sched=null, beat=0, nextNoteTime=0, intensity=0;
+  const BPM=116, ROOTS=[73.42,110.0,116.54,87.31];   // D2, A2, Bb2, F2 — modal, folk-heroic
+  const CHORD=[1,1.2,1.5,2.0];                        // root, minor 3rd, 5th, octave (Dorian feel)
+  function tone(t,freq,dur,type,gain,pluck){ const o=ctx.createOscillator(), g=ctx.createGain(); o.type=type; o.frequency.value=freq;
+    o.connect(g); g.connect(musicGain); g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(gain,t+(pluck?0.005:0.04)); g.gain.exponentialRampToValueAtTime(0.0001,t+dur); o.start(t); o.stop(t+dur+0.02); }
+  function drum(t,gain){ const o=ctx.createOscillator(), g=ctx.createGain(); o.type='sine'; o.frequency.setValueAtTime(165,t); o.frequency.exponentialRampToValueAtTime(55,t+0.12);
+    g.gain.setValueAtTime(gain,t); g.gain.exponentialRampToValueAtTime(0.0001,t+0.18); o.connect(g); g.connect(musicGain); o.start(t); o.stop(t+0.2); }
+  function tick6(t,gain){ const len=ctx.sampleRate*0.06|0, buf=ctx.createBuffer(1,len,ctx.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*(1-i/len); const s=ctx.createBufferSource(); s.buffer=buf; const f=ctx.createBiquadFilter(); f.type='highpass'; f.frequency.value=4200;
+    const g=ctx.createGain(); g.gain.value=gain; s.connect(f); f.connect(g); g.connect(musicGain); s.start(t); s.stop(t+0.07); }
+  function playEighth(i,t){
+    const bar=(i>>3)%4, e=i%8, root=ROOTS[bar];
+    if(e===0){ tone(t,root,1.9,'sine',0.06); tone(t,root*1.5,1.9,'sine',0.035); }      // drone fifth
+    if(e===0||e===4) tone(t,root,0.5,'sawtooth',0.10,true);                            // bass pluck
+    tone(t, root*4*CHORD[e%4], 0.28,'triangle', 0.05+0.03*intensity, true);            // lute arp
+    if(e===0) drum(t,0.18); else if(e===4) drum(t,0.12);                               // frame drum
+    if(intensity>0.5){ if(e===2||e===6) tick6(t,0.05);                                 // tambourine on the final lap
+      tone(t, root*6*CHORD[(i*3)%4], 0.22,'triangle',0.035,true); }                    // counter-melody
+    if(amb&&amb.birds&&e===0&&Math.random()<0.22) chirp();                             // birdsong between bars
+  }
+  function scheduler(){ if(!ctx) return; const spb=(60/(BPM+intensity*12))/2;          // seconds per eighth (intensity nudges tempo)
+    while(nextNoteTime < ctx.currentTime+0.2){ playEighth(beat,nextNoteTime); nextNoteTime+=spb; beat++; } }
+  function startMusic(){ resume(); applyVolumes(); if(sched||!ctx) return; beat=0; nextNoteTime=ctx.currentTime+0.1; sched=setInterval(scheduler,25); }
+  function stopMusic(){ if(sched){ clearInterval(sched); sched=null; } }
+  function setIntensity(x){ intensity=Math.max(0,Math.min(1,x)); }
+
+  return { resume, applyVolumes, startMusic, stopMusic, sfx, startAmbient, stopAmbient, setEngine, setCrowd, boostWhoosh, setIntensity };
 })();
 
 function startRace(){
   buildWorld(selectedTrack);
   spawnRacers();
-  Audio.startMusic();
+  Audio.setIntensity(0); Audio.startMusic(); Audio.startAmbient(curTrack.name);
   paused=false; lastPlace=0; el('banner').classList.remove('finalLap');
   state='countdown'; countdown=3.2; raceTime=0; results=[];
   document.getElementById('start').classList.add('hidden');
@@ -1736,6 +1839,15 @@ function updateRacer(r,dt){
   if(wantBoost && r.stamina>0.02 && !stunned && thr>0){ boosting=true; r.stamina=Math.max(0,r.stamina-TUNE.staminaDrain*dt); }
   else r.stamina=Math.min(1, r.stamina+TUNE.staminaRegen*dt);
   if(r.bracing) r.stamina=Math.min(1,r.stamina+0.05*dt);
+  r._boosting=boosting;
+  // player audio: the gallop/wind bed tracks speed, a whoosh on the boost's rising edge
+  if(r.isPlayer && state==='race'){
+    if(boosting && !r._wasBoost) Audio.boostWhoosh();
+    r._wasBoost=boosting;
+    Audio.setEngine(r.speed, TUNE.maxSpeed, boosting);
+    let cd=1e9; for(const c of crowdSpots){ const d=dist2D(r.pos.x,r.pos.z,c.x,c.z); if(d<cd)cd=d; }
+    Audio.setCrowd(1-(cd-14)/58);
+  }
 
   // off the track surface? (XZ — riders sit on terrain now)
   const ni=nearestIndex(r.pos,r.wp);
@@ -1805,7 +1917,7 @@ function updateRacer(r,dt){
   if(r.wp>N*0.4 && r.wp<N*0.6) r.halfPassed=true;       // reached the far side
   if(prevWp>N-12 && r.wp<12 && r.halfPassed){           // crossed the line going forward
     r.halfPassed=false; r.lap++;
-    if(r.isPlayer){ if(r.lap===2){ banner('FINAL LAP!'); el('banner').classList.add('finalLap'); Audio.sfx.cheer(); }
+    if(r.isPlayer){ if(r.lap===2){ banner('FINAL LAP!'); el('banner').classList.add('finalLap'); Audio.sfx.cheer(); Audio.setIntensity(1); }
       else if(r.lap<3){ banner('LAP '+(r.lap+1)); el('banner').classList.remove('finalLap'); } }
     if(r.lap>=3 && !r.finished) finishRacer(r);
   }
@@ -1993,7 +2105,7 @@ function updateHUD(){
   el('lanceTxt').textContent=r.lanceCD<=0?'READY':'…';
   el('minimap').style.display=SETTINGS.minimap?'block':'none';
   if(SETTINGS.minimap) drawMini();
-  el('speedlines').style.opacity=Math.min(0.5, Math.max(0,(r.speed-48)/46));
+  el('speedlines').style.opacity=Math.min(0.62, Math.max(0,(r.speed-48)/46) + (r._boosting?0.2:0));   // extra rush on the spur
   updateNameplates();
   el('offtrack').style.opacity = (state==='race' && r._off) ? 0.95 : 0;
 }
@@ -2039,7 +2151,7 @@ function tickCountdown(dt){
 
 function endRace(){
   state='done';
-  Audio.stopMusic(); Audio.sfx.fanfare(); if(player().place===1) Audio.sfx.cheer();
+  Audio.stopMusic(); Audio.stopAmbient(); Audio.setIntensity(0); Audio.sfx.fanfare(); if(player().place===1) Audio.sfx.cheer();
   const conf=[0xff5a5a,0x5a9aff,0x5ad07a,0xffd24a,0xb46bff,0xff8c42];
   for(let i=0;i<60;i++) Particles.spawnConfetti(player().pos.x, player().pos.y+14, player().pos.z, conf[i%conf.length]);
   // make remaining AI finish instantly for the board, sorted by progress
@@ -2112,6 +2224,8 @@ function step(dt){
     f.a.material.opacity=0.82+Math.sin(tt*1.9)*0.12; }
   for(const sw of swayers){ sw.node.rotation[sw.axis]=sw.base+Math.sin(worldTime*1.5+sw.ph)*sw.amp; }
   waterNormalTex.offset.x += dt*0.02; waterNormalTex.offset.y += dt*0.014;   // ripples
+  if(fxShaders.length){ _viewSun.copy(SUN_DIR).transformDirection(camera.matrixWorldInverse);   // sun in view space for water glint
+    for(const sh of fxShaders){ sh.uniforms.uTime.value=worldTime; if(sh.uniforms.uSun) sh.uniforms.uSun.value.copy(_viewSun); } }
   for(const bf of butterflies){ const a=worldTime*bf.sp+bf.ph;
     bf.s.position.set(bf.cx+Math.cos(a)*bf.r+Math.sin(a*2.3)*1.4, bf.baseY+Math.sin(a*3)*0.8, bf.cz+Math.sin(a)*bf.r+Math.cos(a*1.7)*1.4); }
   // gentle crowd wave
