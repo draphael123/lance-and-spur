@@ -1042,20 +1042,23 @@ function buildDragonSkeleton(x,z){
 function buildWallShields(){
   const OFF=HALF_W+WALL_INNER;
   const crests=TEAM_CREST;
-  const shieldGeo=new THREE.PlaneGeometry(2.2,2.8), backGeo=new THREE.BoxGeometry(2.5,3.0,0.25);
+  const shieldGeo=new THREE.PlaneGeometry(1.9,2.4), backGeo=new THREE.BoxGeometry(2.2,2.6,0.25);
   const backMat=new THREE.MeshStandardMaterial({color:0x3a2a1a,roughness:.9});
+  const shPostMat=new THREE.MeshStandardMaterial({color:0x4a3422,roughness:.9});
   for(const sgn of [1,-1]){ for(let i=6;i<N;i+=22){ const p=waypoints[i], tn=tangents[i];
     const n=new THREE.Vector3(-tn.z,0,tn.x).normalize().multiplyScalar(sgn);
-    const sx=p.x+n.x*(OFF-0.2), sz=p.z+n.z*(OFF-0.2); const sy=terrainHeight(sx,sz)+2.7;
+    const sx=p.x+n.x*(OFF-0.2), sz=p.z+n.z*(OFF-0.2); const sy=terrainHeight(sx,sz)+2.6;
+    const spost=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,2.6,6),shPostMat); spost.position.set(sx,terrainHeight(sx,sz)+1.3,sz); W.add(spost);  // post raising the shield above the low parapet
     const back=new THREE.Mesh(backGeo,backMat); back.position.set(sx,sy,sz); back.lookAt(sx-n.x,sy,sz-n.z); W.add(back);
     const sh=new THREE.Mesh(shieldGeo, new THREE.MeshStandardMaterial({map:crests[((i/22)|0)%TEAM.length], transparent:true, alphaTest:0.5, side:THREE.DoubleSide, roughness:.7}));
     sh.position.set(sx-n.x*0.16,sy,sz-n.z*0.16); sh.lookAt(sx-n.x*2,sy,sz-n.z*2); W.add(sh);
   }}
 }
 
-// continuous solid stone rampart hugging the track edge (this IS the collision wall)
+// LOW stone parapet hugging the track edge — you see right over it to the world & landmarks (collision
+// is a separate invisible limit, so opening the sightline doesn't change how the track plays)
 function buildWall(){
-  const OFF=HALF_W+WALL_INNER, T=2.0, H=4.4, segs=320;
+  const OFF=HALF_W+WALL_INNER, T=1.6, H=1.5, segs=320;
   const stoneMat=new THREE.MeshStandardMaterial({map:stoneWallTex, normalMap:stoneNormalTex, normalScale:new THREE.Vector2(0.8,0.8), color:0xcabfa6, roughness:.96, side:THREE.DoubleSide});
   const sc=curTrack._scut;
   // a wall point is in the shortcut "gap" if its waypoint is within [a,b] AND it sits on the chord (inner) side
@@ -1084,23 +1087,24 @@ function buildWall(){
     g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
     g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2)); g.setIndex(idx); g.computeVertexNormals();
     const m=new THREE.Mesh(g,stoneMat); m.castShadow=true; m.receiveShadow=true; W.add(m);
-    // stone crenellation teeth (merlons) sitting flush on the wall top, regularly spaced with gaps
-    const merlonGeo=new THREE.BoxGeometry(2.0,1.6,T); merlonGeo.translate(0,0.8,0);   // base at wall top
-    for(let i=0;i<N;i+=5){ const p=waypoints[i], tn=tangents[i]; const n=new THREE.Vector3(-tn.z,0,tn.x).normalize().multiplyScalar(sgn);
+    // small crenellation teeth flush on the low parapet top (medieval flavour, doesn't block the view)
+    const merlonGeo=new THREE.BoxGeometry(1.3,0.6,T); merlonGeo.translate(0,0.3,0);   // base at wall top
+    for(let i=0;i<N;i+=6){ const p=waypoints[i], tn=tangents[i]; const n=new THREE.Vector3(-tn.z,0,tn.x).normalize().multiplyScalar(sgn);
       if(inGap(p.x,p.z,p.x+n.x*OFF,p.z+n.z*OFF,i/N) || inLedge(i/N)) continue;
       const mx=p.x+n.x*(OFF+T*0.5), mz=p.z+n.z*(OFF+T*0.5);
       const mer=new THREE.Mesh(merlonGeo, stoneMat); mer.position.set(mx, terrainHeight(mx,mz)+H, mz);
       mer.rotation.y=Math.atan2(tn.x,tn.z); mer.castShadow=true; W.add(mer);
     }
-    // festive bunting hung just under the merlons on the inner face
-    const triShape=new THREE.Shape(); triShape.moveTo(-0.42,0); triShape.lineTo(0.42,0); triShape.lineTo(0,-0.85); triShape.lineTo(-0.42,0);
-    const flagGeo=new THREE.ShapeGeometry(triShape);
+    // pennant poles rising above the parapet every so often — keeps the festive flag-line without a wall of cloth
     const buntMats=BUNT_COLS.map(c=>new THREE.MeshStandardMaterial({color:c, side:THREE.DoubleSide, roughness:.7}));
+    const poleMat=new THREE.MeshStandardMaterial({color:0x6b4a24,roughness:.85,map:woodTex});
     let fc=0;
-    for(let i=2;i<N;i+=5){ const p=waypoints[i], tn=tangents[i]; const n=new THREE.Vector3(-tn.z,0,tn.x).normalize().multiplyScalar(sgn);
+    for(let i=3;i<N;i+=18){ const p=waypoints[i], tn=tangents[i]; const n=new THREE.Vector3(-tn.z,0,tn.x).normalize().multiplyScalar(sgn);
       if(inGap(p.x,p.z,p.x+n.x*OFF,p.z+n.z*OFF,i/N) || inLedge(i/N)) continue;
-      const fx=p.x+n.x*OFF, fz=p.z+n.z*OFF; const fl=new THREE.Mesh(flagGeo,buntMats[(fc++)%buntMats.length]);
-      fl.position.set(fx, terrainHeight(fx,fz)+H-0.3, fz); fl.lookAt(fx-n.x, terrainHeight(fx,fz)+H-0.3, fz-n.z); W.add(fl);
+      const fx=p.x+n.x*(OFF+0.3), fz=p.z+n.z*(OFF+0.3), fy=terrainHeight(fx,fz);
+      const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,4.5,6),poleMat); pole.position.set(fx,fy+2.25,fz); pole.castShadow=true; W.add(pole);
+      const pennant=new THREE.Mesh(new THREE.PlaneGeometry(1.6,0.7), buntMats[(fc++)%buntMats.length]); pennant.position.set(fx+n.x*0.8,fy+3.9,fz+n.z*0.8); pennant.rotation.y=Math.atan2(tn.x,tn.z); W.add(pennant);
+      swayers.push({node:pennant,axis:'y',base:Math.atan2(tn.x,tn.z),amp:0.3,ph:Math.random()*6.28});
     }
   }
 }
