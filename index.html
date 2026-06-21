@@ -1035,7 +1035,7 @@ function buildDragonSkeleton(x,z){
   const snout=new THREE.Mesh(new THREE.ConeGeometry(2.4,8,7), bone); snout.rotation.z=Math.PI/2; snout.position.set(hx-9,7,0); g.add(snout);
   for(const s of [1,-1]){ const horn=new THREE.Mesh(new THREE.ConeGeometry(0.8,5,6), bone); horn.position.set(hx-2,12,s*2); horn.rotation.z=0.35*s; horn.rotation.x=-0.3; g.add(horn);
     const eye=new THREE.Mesh(new THREE.SphereGeometry(0.7,7,6), new THREE.MeshStandardMaterial({color:0x111111,roughness:.5})); eye.position.set(hx-4,8.4,s*1.9); g.add(eye); }
-  g.position.set(x,y,z); g.rotation.y=Math.atan2(-x,-z); g.traverse(o=>{ if(o.isMesh)o.castShadow=true; }); W.add(g);
+  g.position.set(x,y+3,z); g.rotation.y=Math.atan2(-x,-z); g.scale.setScalar(1.6); g.traverse(o=>{ if(o.isMesh)o.castShadow=true; }); W.add(g);
 }
 
 // heraldic shields mounted on the inner (track-facing) wall face
@@ -1734,7 +1734,7 @@ function buildHighmoorLandmarks(){
   if(curTrack.jump!==undefined) buildRamp(curTrack.jump);                     // a turf launch ramp — big air
   if(curTrack.gate!==undefined) buildBoulderGate(curTrack.gate);             // a timed boulder dead-drop
   if(curTrack.ledge) buildLedgeMarkers(curTrack.ledge);                       // pennants flagging the wall-less ledge
-  buildDragonSkeleton(150,-150);                                              // a colossal dragon skeleton draped on the crag
+  buildDragonSkeleton(210,-175);                                              // a colossal dragon skeleton draped on the crag fort hill
   buildEagles();
 }
 // a cave/tunnel you drive THROUGH — ONE continuous swept-arch shell (no gaps, fully opaque), lit by torches
