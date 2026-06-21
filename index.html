@@ -1232,6 +1232,7 @@ function buildBreakables(){
   const hayMat=new THREE.MeshStandardMaterial({color:0xd9b84a,roughness:1});
   for(const sgn of [1,-1]) for(let k=0;k<7;k++){
     const i=((k*37+17+(sgn>0?0:13))%N); const p=waypoints[i], t=tangents[i]; const n=new THREE.Vector3(-t.z,0,t.x).normalize().multiplyScalar(sgn);
+    if(curTrack.tunnel){ const a=curTrack.tunnel[0], len=((curTrack.tunnel[1]-a)%N+N)%N, d=((i-a)%N+N)%N; if(d<=len) continue; }   // no hay inside the cave
     const off=HALF_W-1.2+Math.random()*2.2; const x=p.x+n.x*off, z=p.z+n.z*off;
     if(distToTrack(x,z)>HALF_W+2.6) continue;                        // keep inside the wall
     const grp=new THREE.Group();
@@ -1721,10 +1722,18 @@ function buildBoulderGate(idx){
   for(const s of [1,-1]){ const px=p.x+n.x*s*span, pz=p.z+n.z*s*span;
     const post=new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.7,H,7), beamMat); post.position.set(px,terrainHeight(px,pz)+H/2,pz); post.castShadow=true; W.add(post); }
   const beam=new THREE.Mesh(new THREE.BoxGeometry(span*2,1.2,1.2), beamMat); beam.position.set(p.x,y+H,p.z); beam.rotation.y=ang; beam.castShadow=true; W.add(beam);
-  // the loaded boulder hanging from the beam (the next one to drop)
-  const boulder=new THREE.Mesh(new THREE.DodecahedronGeometry(1.6,0), new THREE.MeshStandardMaterial({color:0x7a756c,roughness:1,flatShading:true}));
-  boulder.position.set(p.x,y+H-1.8,p.z); boulder.castShadow=true; W.add(boulder);
-  curTrack._gatePos={x:p.x, z:p.z, top:y+H-1.8, boulder};
+  // hazard banner on the beam so the gate reads from a distance
+  const banner=new THREE.Mesh(new THREE.PlaneGeometry(span*1.4,2.0), new THREE.MeshStandardMaterial({color:0xd8b32a, emissive:0x6a4a08, roughness:.8, side:THREE.DoubleSide}));
+  banner.position.set(p.x,y+H-1.4,p.z); banner.rotation.y=ang+Math.PI/2; W.add(banner);
+  // the loaded boulder hanging from the beam, on a chain (the next one to drop)
+  const boulder=new THREE.Mesh(new THREE.DodecahedronGeometry(1.9,0), new THREE.MeshStandardMaterial({color:0x7a756c,roughness:1,flatShading:true}));
+  boulder.position.set(p.x,y+H-2.4,p.z); boulder.castShadow=true; W.add(boulder);
+  const chain=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,2.4,5), new THREE.MeshStandardMaterial({color:0x2a2a2e,metalness:.7,roughness:.5}));
+  chain.position.set(p.x,y+H-1.0,p.z); W.add(chain);
+  // a painted warning ring on the lane marking the impact zone — you can time your dash through
+  const ring=new THREE.Mesh(new THREE.RingGeometry(2.4,3.2,24), new THREE.MeshStandardMaterial({color:0xe04a2a, emissive:0x802010, roughness:.9, side:THREE.DoubleSide, transparent:true, opacity:0.85}));
+  ring.rotation.x=-Math.PI/2; ring.position.set(p.x,y+0.12,p.z); W.add(ring);
+  curTrack._gatePos={x:p.x, z:p.z, top:y+H-2.4, boulder};
 }
 // pennants flagging the wall-less ledge — they stream so you can read the crosswind
 function buildLedgeMarkers(lg){
