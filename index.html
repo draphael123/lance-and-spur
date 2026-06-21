@@ -2375,7 +2375,7 @@ const TUNE = {
 let state='menu', raceTime=0, countdown=0, results=[];
 let selectedTrack=0;
 let raceMode='single';                                   // 'single' | 'gp' | 'battle'
-let battleMode=false, battleOver=false, battleWinner=null; const BALLOONS=3;   // balloon-battle arena mode
+let battleMode=false, battleOver=false, battleWinner=null, battleLastPop=0; const BALLOONS=3;   // balloon-battle arena mode
 let gpActive=false, gpRound=0, gpOrder=[0,1,2,3], gpPoints=[];   // Grand Prix championship state
 const player=()=>racers[0];
 
@@ -2576,7 +2576,7 @@ function popBalloon(r){
   if(!r.balloons || !r.balloons.length) return false;
   const b=r.balloons.pop(); r.model.group.remove(b);
   Particles.spawnBurst(r.pos.x,r.pos.y+9,r.pos.z, r.team.c); Particles.spawnBurst(r.pos.x,r.pos.y+9,r.pos.z, 0xffffff);
-  Audio.sfx.hit&&Audio.sfx.hit();
+  Audio.sfx.hit&&Audio.sfx.hit(); battleLastPop=raceTime;
   if(r.balloons.length===0){ r.out=true; r.finished=true; r.spinout=Math.max(r.spinout,2.2); r.tumble=2.2; r.health=0; r.speed*=0.2;
     Audio.sfx.spin&&Audio.sfx.spin();
     if(r.isPlayer){ toast('💥 You popped! Out of the joust.'); shake=0.6; }
@@ -2589,7 +2589,7 @@ function updateBalloons(dt){
       b.position.y=17.5+Math.sin(worldTime*2+ph)*0.7; b.rotation.z=Math.sin(worldTime*1.5+ph)*0.2; } }
 }
 function startBattle(){
-  battleMode=true; battleOver=false; battleWinner=null;
+  battleMode=true; battleOver=false; battleWinner=null; battleLastPop=0;
   buildArenaWorld();
   spawnRacers();
   for(const r of racers){ r.out=false; attachBalloons(r); }
@@ -2598,6 +2598,18 @@ function startBattle(){
   state='countdown'; countdown=3.2; raceTime=0; results=[];
   el('start').classList.add('hidden'); el('settings').classList.add('hidden'); el('finish').classList.add('hidden');
   el('hud').classList.remove('hidden'); banner('TO ARMS!');
+}
+// if no balloon has popped for a while the survivors are drawn toward the melee's centre so a
+// match can never stall — "the lists close in"
+function antiStall(dt){
+  if(state!=='race' || battleOver) return;
+  if(raceTime-battleLastPop < 5) return;
+  const alive=racers.filter(r=>!r.out); if(alive.length<2) return;
+  let cx=0,cz=0; for(const r of alive){ cx+=r.pos.x; cz+=r.pos.z; } cx/=alive.length; cz/=alive.length;
+  const pull=Math.min(14, 5+(raceTime-battleLastPop-5)*2.2);   // ramps up the longer the stand-off lasts
+  for(const r of alive){ if(r.spinout>0) continue; const dx=cx-r.pos.x, dz=cz-r.pos.z, d=Math.hypot(dx,dz);
+    if(d>5){ r.pos.x+=dx/d*pull*dt; r.pos.z+=dz/d*pull*dt; } }
+  if(player() && !player().out && raceTime-battleLastPop>5 && Math.floor((raceTime-battleLastPop)*2)%6===0) toast('⚔ The lists close in!');
 }
 function checkBattleEnd(){
   if(!battleMode || battleOver || state!=='race') return;
@@ -2664,7 +2676,7 @@ function updateAI(r,dt){
     const dm=SETTINGS.difficulty==='easy'?0.8:SETTINGS.difficulty==='hard'?1.15:1.0;
     if(tgt){ const desired=Math.atan2(tgt.pos.x-r.pos.x, tgt.pos.z-r.pos.z); let dh=normAng(desired-r.heading);
       r._aiSteer=THREE.MathUtils.clamp(dh*1.9,-1,1);
-      r._aiThr = best>3.5 ? 1 : 0.25;                  // keep charging in close
+      r._aiThr = 1;                                    // always charge the target — no dawdling
       r._aiBoost = best>22 && r.stamina>0.3;
       // strike whenever a hit would actually land (target inside the lance cone) — reliable, lively combat
       r._aiStrike = r.lanceCD<=0 && r.stun<=0 && r.spinout<=0 && !!findStrikeTarget(r) && Math.random()<(0.4+0.4*r.aiAggro)*dm;
@@ -3373,7 +3385,7 @@ function step(dt){
   if(state==='race'){ raceTime+=dt; }
   if(state!=='menu'){
     for(const r of racers) updateRacer(r,dt);
-    if(battleMode){ updateBalloons(dt); checkBattleEnd(); }
+    if(battleMode){ updateBalloons(dt); antiStall(dt); checkBattleEnd(); }
     updateCamera(dt);
     if(state==='race'){ camera.getWorldDirection(_camFwd); Audio.setListener(camera.position.x,camera.position.y,camera.position.z,_camFwd.x,_camFwd.y,_camFwd.z); }
     updateHUD();
