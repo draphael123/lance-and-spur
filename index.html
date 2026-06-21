@@ -590,6 +590,7 @@ let mists=[], dustDevils=[], wheelSpots=[];   // river mist, Highmoor dust devil
 let breakables=[], movers=[], projectiles=[]; // smashable props, roaming hazards, lobbed snowballs
 let ramps=[];                                  // jump ramps (trigger zones)
 let _fwT=0, _sbT=0, _catT=0, _gateT=0, _baseExp=1.12;    // firework / snowball / catapult / boulder-gate timers + tunnel base exposure
+let inTunnel=false;                            // player currently under the cave roof (ducks the camera so you can see in)
 let worldTime=0;
 const fxShaders=[];   // compiled shaders carrying a uTime uniform (animated water + wind-swept grass)
 const _viewSun=new THREE.Vector3(), _camFwd=new THREE.Vector3();
@@ -920,7 +921,7 @@ function buildRoadMesh(){
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
   g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2)); g.setIndex(idx); g.computeVertexNormals();
-  const laneColor = curTrack.ice?0xbcd6ea : curTrack.theme==='crag'?0x9a9088 : curTrack.theme==='highland'?0xc7c8a0 : 0xffffff;
+  const laneColor = curTrack.ice?0xbcd6ea : curTrack.theme==='crag'?0xd6d0c4 : curTrack.theme==='highland'?0xdadcc2 : 0xffffff;
   const road=new THREE.Mesh(g,new THREE.MeshStandardMaterial({map:roadTex, normalMap:roadNormalTex, normalScale:new THREE.Vector2(0.25,0.25), roughness:curTrack.ice?0.5:0.92, metalness:curTrack.ice?0.12:0, color:laneColor})); road.receiveShadow=true; W.add(road);
 }
 
@@ -1257,7 +1258,7 @@ function buildMovers(){
   const idx=(N*0.32)|0; const p=waypoints[idx], t=tangents[idx]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
   const cart=makeOxCart(); cart.rotation.y=Math.atan2(n.x,n.z); W.add(cart);
   const obs={type:'circle', x:p.x, z:p.z, r:3.6, slow:0.35}; obstacles.push(obs);
-  movers.push({group:cart, obs, cx:p.x, cz:p.z, nx:n.x, nz:n.z, span:HALF_W+5, ph:Math.random()*6.28, sp:0.45});
+  movers.push({group:cart, obs, cx:p.x, cz:p.z, nx:n.x, nz:n.z, span:HALF_W-2, ph:Math.random()*6.28, sp:0.45});
 }
 
 function buildDeco(){
@@ -1407,10 +1408,10 @@ function makeSheep(){ const g=new THREE.Group();
 function buildSheepHerd(){
   const idx=(N*0.7)|0; const p=waypoints[idx], t=tangents[idx]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
   const herd=new THREE.Group();
-  for(let i=0;i<6;i++){ const s=makeSheep(); s.position.set((Math.random()-.5)*7,0,(Math.random()-.5)*5); s.rotation.y=Math.random()*6; herd.add(s); }
+  for(let i=0;i<6;i++){ const s=makeSheep(); s.position.set((Math.random()-.5)*5,0,(Math.random()-.5)*4); s.rotation.y=Math.random()*6; herd.add(s); }
   W.add(herd);
   const obs={type:'circle',x:p.x,z:p.z,r:5,slow:0.45}; obstacles.push(obs);
-  movers.push({group:herd, obs, cx:p.x, cz:p.z, nx:n.x, nz:n.z, span:HALF_W+8, ph:Math.random()*6.28, sp:0.28});
+  movers.push({group:herd, obs, cx:p.x, cz:p.z, nx:n.x, nz:n.z, span:HALF_W-4, ph:Math.random()*6.28, sp:0.28});
 }
 function buildHighlandLandmarks(){
   const [wx,wz]=curTrack.windmillAt; buildWindmill(wx,wz);
@@ -1657,8 +1658,8 @@ function buildHighmoorLandmarks(){
 }
 // a cave/tunnel you drive THROUGH: stone walls + ceiling over the lane, lit by torches
 function buildTunnel(a,b){
-  const dark=new THREE.MeshStandardMaterial({color:0x6a655b, roughness:1, map:stoneWallTex, normalMap:stoneNormalTex, normalScale:new THREE.Vector2(0.9,0.9), side:THREE.DoubleSide, emissive:0x14110c, emissiveIntensity:1});
-  const H=8.5, off=HALF_W+WALL_INNER+0.4, span=((b-a)%N+N)%N;
+  const dark=new THREE.MeshStandardMaterial({color:0x7c766a, roughness:1, map:stoneWallTex, normalMap:stoneNormalTex, normalScale:new THREE.Vector2(0.9,0.9), side:THREE.DoubleSide, emissive:0x231b10, emissiveIntensity:1});
+  const H=11, off=HALF_W+WALL_INNER+0.4, span=((b-a)%N+N)%N;
   for(let k=0;k<=span;k++){ const i=(a+k)%N, p=waypoints[i], t=tangents[i]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
     const cy=terrainHeight(p.x,p.z), ang=Math.atan2(t.x,t.z);
     if(k<span){ const j=(a+k+1)%N, p2=waypoints[j], cy2=terrainHeight(p2.x,p2.z), segLen=dist2D(p.x,p.z,p2.x,p2.z)+0.6;
@@ -1666,10 +1667,10 @@ function buildTunnel(a,b){
       for(const s of [1,-1]){ const wx=p.x+n.x*s*off, wz=p.z+n.z*s*off; const wall=new THREE.Mesh(new THREE.BoxGeometry(1.2,H+1,segLen),dark); wall.position.set((wx+p2.x+n.x*s*off)/2,cy+(H+1)/2,(wz+p2.z+n.z*s*off)/2); wall.rotation.y=ang; wall.castShadow=true; wall.receiveShadow=true; W.add(wall); } }
     if(k===0||k===span){ const arch=new THREE.Mesh(new THREE.BoxGeometry(off*2+4,2.2,1.6),dark); arch.position.set(p.x,cy+H+1,p.z); arch.rotation.y=ang; W.add(arch); }   // cave-mouth lintel
     // wall torches that actually light the cave (point light + flickering flame)
-    if(k%4===2){ for(const s of [1,-1]){ const tx=p.x+n.x*s*(off-0.7), tz=p.z+n.z*s*(off-0.7), ty=cy+4.5;
+    if(k%3===0){ for(const s of [1,-1]){ const tx=p.x+n.x*s*(off-0.7), tz=p.z+n.z*s*(off-0.7), ty=cy+5.5;
       const bracket=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,1.0,5), new THREE.MeshStandardMaterial({color:0x3a2a1a,roughness:.9})); bracket.position.set(tx,ty-0.4,tz); W.add(bracket);
-      const flame=new THREE.Mesh(new THREE.ConeGeometry(0.42,1.5,7), new THREE.MeshBasicMaterial({color:0xffb24a,transparent:true,opacity:0.95})); flame.position.set(tx,ty+0.6,tz); W.add(flame);
-      const lt=new THREE.PointLight(0xff9436, 3.2, 38, 1.4); lt.position.set(tx,ty+1.2,tz); W.add(lt);
+      const flame=new THREE.Mesh(new THREE.ConeGeometry(0.46,1.7,7), new THREE.MeshBasicMaterial({color:0xffc266,transparent:true,opacity:0.95})); flame.position.set(tx,ty+0.7,tz); W.add(flame);
+      const lt=new THREE.PointLight(0xffa347, 5.2, 48, 1.2); lt.position.set(tx,ty+1.4,tz); W.add(lt);
       flames.push({a:flame, b:flame, ph:Math.random()*6.28}); } }
   }
 }
@@ -1704,6 +1705,7 @@ function buildRamp(idx){
   const p=waypoints[idx], t=tangents[idx]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
   const ang=Math.atan2(t.x,t.z), y=terrainHeight(p.x,p.z), W2=HALF_W*1.5, L=11;
   const ramp=new THREE.Mesh(new THREE.BoxGeometry(W2,2.6,L), new THREE.MeshStandardMaterial({color:0x6a5536,roughness:.95,map:woodTex}));
+  ramp.rotation.order='YXZ';   // yaw to the track first, THEN pitch up along travel — not a skewed world-axis tilt
   ramp.position.set(p.x,y+0.5,p.z); ramp.rotation.set(-0.34,ang,0); ramp.castShadow=true; ramp.receiveShadow=true; W.add(ramp);
   // striped marker posts either side of the lip
   for(const s of [1,-1]){ const px=p.x+n.x*s*(W2*0.5+0.7), pz=p.z+n.z*s*(W2*0.5+0.7);
@@ -2765,11 +2767,11 @@ function updateCamera(dt){
     sun.target.position.copy(r.pos); sun.position.copy(r.pos).add(SUN_OFFSET);
     return;
   }
-  const back=fwd.clone().multiplyScalar(r.spinout>0?-14:-22);   // pull in on a spin-out
+  const back=fwd.clone().multiplyScalar(r.spinout>0?-14:(inTunnel?-16:-22));   // pull in on a spin-out / in the cave
   const want=r.pos.clone().add(back);
-  want.y = r.pos.y + (r.spinout>0?9:13) + r.speed*0.05;
-  want.y = Math.max(want.y, terrainHeight(want.x, want.z)+5);   // never dip below the hills
-  camera.position.lerp(want, Math.min(1,dt*4));
+  want.y = r.pos.y + (r.spinout>0?9:(inTunnel?5.5:13)) + r.speed*0.05;          // duck under the cave roof
+  want.y = Math.max(want.y, terrainHeight(want.x, want.z)+(inTunnel?2.5:5));    // never dip below the hills
+  camera.position.lerp(want, Math.min(1,dt*(inTunnel?6:4)));                    // snap in quicker at the cave mouth
   // look ahead, leaning into the upcoming corner
   const ahead=tangents[(r.wp+12)%N]; const lookDir=fwd.clone().lerp(new THREE.Vector3(ahead.x,0,ahead.z),0.4).normalize();
   const look=r.pos.clone().addScaledVector(lookDir,14); look.y=r.pos.y+5;
@@ -2996,8 +2998,11 @@ function step(dt){
     for(const sh of fxShaders){ sh.uniforms.uTime.value=worldTime; if(sh.uniforms.uSun) sh.uniforms.uSun.value.copy(_viewSun); if(sh.uniforms.uWind) sh.uniforms.uWind.value=wm; } }
   for(const bf of butterflies){ const a=worldTime*bf.sp+bf.ph;
     bf.s.position.set(bf.cx+Math.cos(a)*bf.r+Math.sin(a*2.3)*1.4, bf.baseY+Math.sin(a*3)*0.8, bf.cz+Math.sin(a)*bf.r+Math.cos(a*1.7)*1.4); }
-  // roaming ox-cart / sweeping avalanche slides across the lane; its collider follows it
-  for(const mv of movers){ const o=Math.sin(worldTime*mv.sp+mv.ph)*mv.span;
+  // roaming ox-cart / sweeping avalanche slides across the lane; its collider follows it.
+  // hard clamp the swing to the parapet so nothing (cart, herd, boulders) grinds through the wall
+  for(const mv of movers){ let o=Math.sin(worldTime*mv.sp+mv.ph)*mv.span;
+    const lim = mv.slam ? HALF_W+WALL_INNER-1.2 : HALF_W-1.0;
+    if(o>lim) o=lim; else if(o<-lim) o=-lim;
     const x=mv.cx+mv.nx*o, z=mv.cz+mv.nz*o; mv.obs.x=x; mv.obs.z=z; mv.group.position.set(x, terrainHeight(x,z), z);
     if(mv.roll){ mv.group.rotation.x += dt*Math.cos(worldTime*mv.sp+mv.ph)*mv.sp*mv.span*0.12; } }
   // living-level moments: fireworks over the festival, snowballs from the winter stands
@@ -3030,10 +3035,12 @@ function step(dt){
         else { Particles.spawnSplash(pr.x,gy+0.2,pr.z,1.0); if(hit){ pl.stun=Math.max(pl.stun,0.3); pl.tumble=0.3; pl.speed*=0.82; toast('❄ Snowball!'); } }
         W.remove(pr.mesh); pr.mesh.geometry.dispose(); pr.mesh.material.dispose(); pr.dead=true; } }
     projectiles=projectiles.filter(p=>!p.dead); }
-  // driving through a tunnel darkens the world
+  // driving through a tunnel darkens the world (and ducks the camera so the roof doesn't block the view)
   if(curTrack && curTrack.tunnel){ const pl=player(); let inTun=false;
     if(pl){ const ni=globalNearest(pl.pos); const a=curTrack.tunnel[0], len=((curTrack.tunnel[1]-a)%N+N)%N, d=((ni-a)%N+N)%N; inTun = d<=len && dist2D(pl.pos.x,pl.pos.z,waypoints[ni].x,waypoints[ni].z)<HALF_W+4; }
-    const want=inTun?_baseExp*0.82:_baseExp; renderer.toneMappingExposure += (want-renderer.toneMappingExposure)*Math.min(1,dt*4); }
+    inTunnel=inTun;
+    const want=inTun?_baseExp*0.88:_baseExp; renderer.toneMappingExposure += (want-renderer.toneMappingExposure)*Math.min(1,dt*4); }
+  else inTunnel=false;
   // aurora curtains shimmer over Wyrmspire
   if(aurora.grp.visible){ for(const b of aurora.bands){ b.m.material.opacity=0.3+0.22*Math.sin(worldTime*0.5+b.ph); b.m.position.x=b.base+Math.sin(worldTime*0.2+b.ph)*45; } }
   // river mist drifts and breathes; dust devils wander the crag
