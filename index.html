@@ -846,6 +846,7 @@ function buildWorld(idx){
   buildGround(); buildRoadMesh(); buildStartLine(); buildWall(); buildShortcutPath(); buildWallShields(); buildDeco();
   if(curTrack.landmarks) curTrack.landmarks();
   buildProps(); buildNature(); buildWater(); buildBirds(); buildBreakables(); buildMovers();
+  buildGrandArches();                        // grand themed gateways you race under (every track)
   applyTimeOfDay();
 }
 // day / golden-sunset palette (overrides the track's sky after buildWorld)
@@ -993,6 +994,48 @@ function buildStartLine(){
   const roof=new THREE.Mesh(new THREE.ConeGeometry(4.3,3,4), new THREE.MeshStandardMaterial({color:0xc23b2e})); roof.position.y=7.6; roof.rotation.y=Math.PI/4; booth.add(roof);
   booth.position.set(bx,by,bz); booth.traverse(o=>o.castShadow=true); W.add(booth);
   obstacles.push({type:'circle',x:bx,z:bz,r:4,slow:0.5});
+}
+
+// a grand themed gateway you race UNDER — pylons, a spanning beam, a crest plaque and pennant bunting
+function buildGrandArch(idx){
+  const p=waypoints[idx], t=tangents[idx]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
+  const ang=Math.atan2(t.x,t.z), y0=terrainHeight(p.x,p.z);
+  const th=curTrack.theme, winter=th==='winter', craggy=th==='crag';
+  const pylonMat=new THREE.MeshStandardMaterial({color:winter?0xcdddea:craggy?0x9a948a:0x7a5630, roughness:.92, map:winter?null:woodTex});
+  const span=HALF_W+WALL_INNER+1.6, H=17.5;
+  for(const s of [1,-1]){ const px=p.x+n.x*s*span, pz=p.z+n.z*s*span, py=terrainHeight(px,pz);
+    const pylon=new THREE.Mesh(new THREE.BoxGeometry(2.6,H,2.6), pylonMat); pylon.position.set(px,py+H/2,pz); pylon.rotation.y=ang; pylon.castShadow=true; W.add(pylon);
+    const cap=new THREE.Mesh(new THREE.BoxGeometry(3.2,0.8,3.2), pylonMat); cap.position.set(px,py+H,pz); cap.rotation.y=ang; W.add(cap);
+    const fin=new THREE.Mesh(new THREE.ConeGeometry(1.5,3.0,6), new THREE.MeshStandardMaterial({color:winter?0x9fc0e0:TEAM[s>0?1:2].c, roughness:.6})); fin.position.set(px,py+H+1.9,pz); fin.castShadow=true; W.add(fin);
+  }
+  const beam=new THREE.Mesh(new THREE.BoxGeometry(span*2+2.6,2.2,2.6), pylonMat); beam.position.set(p.x,y0+H,p.z); beam.rotation.y=ang; beam.castShadow=true; W.add(beam);
+  // a gilt crest plaque on the crown
+  const plaque=new THREE.Mesh(new THREE.CircleGeometry(2.7,22), new THREE.MeshStandardMaterial({color:0xe8c64a, roughness:.4, metalness:.5, side:THREE.DoubleSide}));
+  plaque.position.set(p.x,y0+H+2.0,p.z); plaque.lookAt(p.x+t.x,y0+H+2.0,p.z+t.z); W.add(plaque);
+  const star=new THREE.Mesh(new THREE.ConeGeometry(1.0,0.4,12), trimGold()); star.position.set(p.x,y0+H+2.0,p.z); star.lookAt(p.x+t.x,y0+H+2.0,p.z+t.z); W.add(star);
+  // pennant bunting sagging across the span
+  for(let i=0;i<11;i++){ const u=i/10, bx=p.x+n.x*span*2*(u-0.5), bz=p.z+n.z*span*2*(u-0.5), sag=Math.sin(u*Math.PI)*1.8;
+    const fl=new THREE.Mesh(new THREE.PlaneGeometry(1.0,1.3), new THREE.MeshStandardMaterial({color:BUNT_COLS[i%BUNT_COLS.length], side:THREE.DoubleSide, roughness:.7}));
+    fl.position.set(bx,y0+H-1.6-sag,bz); fl.rotation.y=ang; W.add(fl); }
+}
+function trimGold(){ return new THREE.MeshStandardMaterial({color:0xf0d050, roughness:.35, metalness:.6}); }
+function buildGrandArches(){ for(const f of [0.34,0.68]){ const i=Math.round(N*f)%N; buildGrandArch(i); } }
+
+// a colossal dragon skeleton draped over the crag — the Highmoor hero landmark
+function buildDragonSkeleton(x,z){
+  const bone=new THREE.MeshStandardMaterial({color:0xe6dfcd, roughness:.85, flatShading:true});
+  const g=new THREE.Group(); const y=terrainHeight(x,z), SEG=15, len=72;
+  for(let i=0;i<SEG;i++){ const u=i/(SEG-1), sx=(u-0.5)*len, sz=Math.sin(u*Math.PI*1.1)*16, sy=6+Math.sin(u*Math.PI)*13;
+    const vert=new THREE.Mesh(new THREE.SphereGeometry(1.6-u*0.6,7,6), bone); vert.position.set(sx,sy,sz); g.add(vert);
+    if(i>2 && i<10){ for(const s of [1,-1]){ const rib=new THREE.Mesh(new THREE.TorusGeometry(6-Math.abs(i-6)*0.5,0.45,5,9,Math.PI), bone);
+      rib.position.set(sx,sy-0.5,sz); rib.rotation.set(Math.PI/2,0,s>0?0:Math.PI); rib.scale.set(1,1.7,1); g.add(rib); } } }
+  // skull + jaw + horns at the head end
+  const hx=-len*0.5;
+  const skull=new THREE.Mesh(new THREE.SphereGeometry(4.2,8,7), bone); skull.position.set(hx-3,8,0); skull.scale.set(1,0.9,1.35); g.add(skull);
+  const snout=new THREE.Mesh(new THREE.ConeGeometry(2.4,8,7), bone); snout.rotation.z=Math.PI/2; snout.position.set(hx-9,7,0); g.add(snout);
+  for(const s of [1,-1]){ const horn=new THREE.Mesh(new THREE.ConeGeometry(0.8,5,6), bone); horn.position.set(hx-2,12,s*2); horn.rotation.z=0.35*s; horn.rotation.x=-0.3; g.add(horn);
+    const eye=new THREE.Mesh(new THREE.SphereGeometry(0.7,7,6), new THREE.MeshStandardMaterial({color:0x111111,roughness:.5})); eye.position.set(hx-4,8.4,s*1.9); g.add(eye); }
+  g.position.set(x,y,z); g.rotation.y=Math.atan2(-x,-z); g.traverse(o=>{ if(o.isMesh)o.castShadow=true; }); W.add(g);
 }
 
 // heraldic shields mounted on the inner (track-facing) wall face
@@ -1691,6 +1734,7 @@ function buildHighmoorLandmarks(){
   if(curTrack.jump!==undefined) buildRamp(curTrack.jump);                     // a turf launch ramp — big air
   if(curTrack.gate!==undefined) buildBoulderGate(curTrack.gate);             // a timed boulder dead-drop
   if(curTrack.ledge) buildLedgeMarkers(curTrack.ledge);                       // pennants flagging the wall-less ledge
+  buildDragonSkeleton(150,-150);                                              // a colossal dragon skeleton draped on the crag
   buildEagles();
 }
 // a cave/tunnel you drive THROUGH — ONE continuous swept-arch shell (no gaps, fully opaque), lit by torches
