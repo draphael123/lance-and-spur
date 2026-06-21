@@ -2861,13 +2861,29 @@ function drawMini(){
   for(const p of waypoints){ minx=Math.min(minx,p.x);maxx=Math.max(maxx,p.x);minz=Math.min(minz,p.z);maxz=Math.max(maxz,p.z); }
   const pad=16, sx=(W-pad*2)/(maxx-minx), sz=(H-pad*2)/(maxz-minz), s=Math.min(sx,sz);
   const tx=x=>pad+(x-minx)*s, tz=z=>pad+(z-minz)*s;
-  mini.strokeStyle='rgba(255,225,170,.6)'; mini.lineWidth=6; mini.lineJoin='round'; mini.beginPath();
-  for(let i=0;i<=N;i++){ const p=waypoints[i%N]; i?mini.lineTo(tx(p.x),tz(p.z)):mini.moveTo(tx(p.x),tz(p.z)); }
-  mini.stroke();
+  mini.lineJoin=mini.lineCap='round';
+  // track ribbon: a dark casing under a brighter core so the loop reads as a road, not a blob
+  mini.beginPath(); for(let i=0;i<=N;i++){ const p=waypoints[i%N]; i?mini.lineTo(tx(p.x),tz(p.z)):mini.moveTo(tx(p.x),tz(p.z)); }
+  mini.strokeStyle='rgba(20,14,8,.7)'; mini.lineWidth=6.5; mini.stroke();
+  mini.strokeStyle='rgba(255,228,170,.85)'; mini.lineWidth=3; mini.stroke();
+  // start/finish line marker
+  const sp=waypoints[0], st=tangents[0], snx=-st.z, snz=st.x;
+  mini.beginPath(); mini.moveTo(tx(sp.x-snx*HALF_W),tz(sp.z-snz*HALF_W)); mini.lineTo(tx(sp.x+snx*HALF_W),tz(sp.z+snz*HALF_W));
+  mini.strokeStyle='#fff'; mini.lineWidth=2.5; mini.stroke();
   for(const r of racers){
-    mini.beginPath(); mini.arc(tx(r.pos.x),tz(r.pos.z), r.isPlayer?5:3.5, 0, 7);
-    mini.fillStyle = r.isPlayer?'#fff':'#'+r.team.c.toString(16).padStart(6,'0'); mini.fill();
-    if(r.isPlayer){ mini.lineWidth=2; mini.strokeStyle='#111'; mini.stroke(); }
+    const px=tx(r.pos.x), pz=tz(r.pos.z), col=r.isPlayer?'#fff':'#'+r.team.c.toString(16).padStart(6,'0');
+    if(r.isPlayer){ // a heading arrow so you can read which way you're pointed
+      const a=r.heading, hx=Math.sin(a), hz=Math.cos(a), gx=Math.cos(a), gz=-Math.sin(a);
+      mini.beginPath();
+      mini.moveTo(px+hx*7, pz+hz*7);                       // nose
+      mini.lineTo(px+gx*4-hx*3, pz+gz*4-hz*3);             // right wing
+      mini.lineTo(px-gx*4-hx*3, pz-gz*4-hz*3);             // left wing
+      mini.closePath();
+      mini.fillStyle='#fff'; mini.fill(); mini.lineWidth=1.5; mini.strokeStyle='#111'; mini.stroke();
+    } else {
+      mini.beginPath(); mini.arc(px,pz,3.5,0,7); mini.fillStyle=col; mini.fill();
+      mini.lineWidth=1; mini.strokeStyle='rgba(0,0,0,.5)'; mini.stroke();
+    }
   }
 }
 
