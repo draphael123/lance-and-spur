@@ -270,8 +270,9 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { VignetteShader } from 'three/addons/shaders/VignetteShader.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
-import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+// SSAOPass / SMAAPass are loaded lazily (see applyPasses) so a CDN hiccup on those
+// optional passes can never break the whole game.
+let SSAOPass=null, SMAAPass=null;
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 const rbox=(w,h,d,r)=>new RoundedBoxGeometry(w,h,d,2,r!==undefined?r:Math.min(w,h,d)*0.18);
@@ -444,6 +445,15 @@ function skyEquirect(tod){
 }
 let envRT=null;
 function buildEnv(tod){ const eq=skyEquirect(tod); const rt=pmrem.fromEquirectangular(eq); if(envRT)envRT.dispose(); envRT=rt; scene.environment=rt.texture; eq.dispose(); }
+// time-of-day palettes (null sky/fog = use the track's own colours) — declared before
+// buildEnv('day') so skyEquirect can reference TOD without hitting its dead zone
+const TOD = {
+  dawn:    { top:'#2a4a7a', mid:'#e8a36a', bot:'#ffe6c0', sun:'#ffb066', si:1.45, hemi:'#caa07a', hi:0.5,  fog:'#ecceaa', exp:1.12, halo:'#ffcf8a', night:false },
+  day:     { top:null,      mid:null,      bot:null,      sun:'#ffe7b8', si:2.0,  hemi:'#bfe0ff', hi:0.62, fog:null,      exp:1.12, halo:'#fff3d2', night:false },
+  dusk:    { top:'#26356a', mid:'#e07a3a', bot:'#ffce82', sun:'#ff9436', si:1.7,  hemi:'#ffb079', hi:0.5,  fog:'#e6a86e', exp:1.22, halo:'#ff9a4a', night:false },
+  night:   { top:'#060a1a', mid:'#142b46', bot:'#22364e', sun:'#9fb6e0', si:0.45, hemi:'#33425f', hi:0.32, fog:'#101d34', exp:1.0, halo:'#cdd6f0', night:true },
+  overcast:{ top:'#8a96a4', mid:'#aab4be', bot:'#c4cace', sun:'#cdd2d6', si:0.95, hemi:'#aeb8c2', hi:0.72, fog:'#b8bec2', exp:1.06, halo:'#dadee2', night:false },
+};
 buildEnv('day');
 
 // composer / bloom / colour-grade / vignette — pass chain is (re)assembled by applyPasses()
@@ -465,8 +475,7 @@ vignette.uniforms.offset.value = 1.0; vignette.uniforms.darkness.value = 1.05;
 const outputPass = new OutputPass();
 // assemble the post chain from the current graphics settings
 function applyPasses(){
-  if(SETTINGS.ssao && !ssaoPass){ ssaoPass=new SSAOPass(scene,camera,innerWidth,innerHeight); ssaoPass.kernelRadius=10; ssaoPass.minDistance=0.002; ssaoPass.maxDistance=0.12; }
-  if(SETTINGS.aa==='smaa' && !smaaPass){ smaaPass=new SMAAPass(innerWidth,innerHeight); }
+  if(SETTINGS.ssao && !ssaoPass) lazyPass('SSAOPass'); else if(SETTINGS.aa==='smaa' && !smaaPass) lazyPass('SMAAPass');
   const chain=[];
   if(SETTINGS.ssao && ssaoPass) chain.push(ssaoPass); else chain.push(renderPass);
   chain.push(bloom, grade, vignette);
@@ -474,6 +483,16 @@ function applyPasses(){
   chain.push(outputPass);
   composer.passes=chain;
   composer.setSize(innerWidth,innerHeight);
+}
+// fetch an optional post pass on demand; if its module is unavailable, fail soft
+let _loadingPass=false;
+function lazyPass(which){ if(_loadingPass) return; _loadingPass=true;
+  import('three/addons/postprocessing/'+which+'.js').then(m=>{
+    if(which==='SSAOPass'){ SSAOPass=m.SSAOPass; ssaoPass=new SSAOPass(scene,camera,innerWidth,innerHeight); ssaoPass.kernelRadius=10; ssaoPass.minDistance=0.002; ssaoPass.maxDistance=0.12; }
+    else { SMAAPass=m.SMAAPass; smaaPass=new SMAAPass(innerWidth,innerHeight); }
+    _loadingPass=false; applyPasses();
+  }).catch(err=>{ console.warn('Optional pass '+which+' unavailable:',err); _loadingPass=false;
+    if(which==='SSAOPass') SETTINGS.ssao=false; else SETTINGS.aa='msaa'; });
 }
 applyPasses();
 
@@ -788,14 +807,6 @@ function buildWorld(idx){
   applyTimeOfDay();
 }
 // day / golden-sunset palette (overrides the track's sky after buildWorld)
-// time-of-day palettes (null sky/fog = use the track's own colours)
-const TOD = {
-  dawn:    { top:'#2a4a7a', mid:'#e8a36a', bot:'#ffe6c0', sun:'#ffb066', si:1.45, hemi:'#caa07a', hi:0.5,  fog:'#ecceaa', exp:1.12, halo:'#ffcf8a', night:false },
-  day:     { top:null,      mid:null,      bot:null,      sun:'#ffe7b8', si:2.0,  hemi:'#bfe0ff', hi:0.62, fog:null,      exp:1.12, halo:'#fff3d2', night:false },
-  dusk:    { top:'#26356a', mid:'#e07a3a', bot:'#ffce82', sun:'#ff9436', si:1.7,  hemi:'#ffb079', hi:0.5,  fog:'#e6a86e', exp:1.22, halo:'#ff9a4a', night:false },
-  night:   { top:'#060a1a', mid:'#142b46', bot:'#22364e', sun:'#9fb6e0', si:0.45, hemi:'#33425f', hi:0.32, fog:'#101d34', exp:1.0, halo:'#cdd6f0', night:true },
-  overcast:{ top:'#8a96a4', mid:'#aab4be', bot:'#c4cace', sun:'#cdd2d6', si:0.95, hemi:'#aeb8c2', hi:0.72, fog:'#b8bec2', exp:1.06, halo:'#dadee2', night:false },
-};
 function applyTimeOfDay(){
   if(!curTrack) return;
   const p=TOD[SETTINGS.timeOfDay]||TOD.day;
