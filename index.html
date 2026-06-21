@@ -80,6 +80,11 @@
   .setGrid input[type=range]{ width:210px; accent-color:#e0a13a; }
   .setGrid select{ background:#2a1d10; color:#ffd87a; border:1px solid #6b4f2a; border-radius:6px; padding:5px 10px; font-family:inherit; }
   .setGrid input[type=checkbox]{ width:20px; height:20px; accent-color:#e0a13a; }
+  .setHead { font-size:12px; letter-spacing:2px; color:#ffd87a; opacity:.85; border-bottom:1px solid rgba(107,79,42,.4); padding-bottom:3px; margin-top:10px; text-transform:uppercase; }
+  .miniBtn { background:#2a1d10; color:#ffd87a; border:1px solid #6b4f2a; border-radius:6px; padding:4px 12px; cursor:pointer; font-family:inherit; pointer-events:auto; }
+  #fpsBox { position:fixed; top:6px; right:8px; z-index:40; font:12px monospace; color:#9ff0b0; background:rgba(0,0,0,.35); padding:2px 6px; border-radius:5px; display:none; pointer-events:none; }
+  #settings { overflow-y:auto; padding:24px 0; justify-content:flex-start; }
+  #settings .setGrid { max-height:none; }
   .setVal { display:inline-block; min-width:38px; text-align:right; color:#ffd87a; font-variant-numeric:tabular-nums; }
   #finish .row { display:flex; gap:8px; font-size:18px; margin:3px 0; }
   #finish .row b { color:#ffd87a; min-width:30px; text-align:right; }
@@ -144,13 +149,14 @@
     <div class="bar"><i id="lanceFill"></i></div>
   </div>
 
-  <div class="panel" id="speedPanel"><div class="big" id="spdNum">0</div><div class="sub">SPEED</div></div>
+  <div class="panel" id="speedPanel"><div class="big" id="spdNum">0</div><div class="sub" id="spdUnit">KM/H</div></div>
   <div id="minimap"><canvas id="miniCv" width="150" height="150"></canvas></div>
 
   <div id="banner"></div>
   <div id="toast"></div>
 </div>
 
+<div id="fpsBox"></div>
 <div id="touch">
   <div class="tbtn" id="tLeft">◄</div>
   <div class="tbtn" id="tRight">►</div>
@@ -188,16 +194,49 @@
 </div>
 
 <div class="screen hidden" id="settings">
-  <h1 style="font-size:44px">SETTINGS</h1>
+  <h1 style="font-size:40px">SETTINGS</h1>
   <div class="setGrid">
+    <div class="setHead">Audio</div>
     <label>Master volume <span><input type="range" id="setMaster" min="0" max="100"><span class="setVal" id="valMaster">80</span></span></label>
     <label>Music <span><input type="range" id="setMusic" min="0" max="100"><span class="setVal" id="valMusic">55</span></span></label>
     <label>Sound effects <span><input type="range" id="setSfx" min="0" max="100"><span class="setVal" id="valSfx">90</span></span></label>
-    <label>Camera shake <input type="checkbox" id="setShake" checked></label>
+    <label>Ambience <span><input type="range" id="setAmb" min="0" max="100"><span class="setVal" id="valAmb">85</span></span></label>
+
+    <div class="setHead">Graphics</div>
+    <label>Quality preset <select id="setQual"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+    <label>Render scale <span><input type="range" id="setScale" min="50" max="150"><span class="setVal" id="valScale">100</span></span></label>
+    <label>Bloom <span><input type="range" id="setBloom" min="0" max="100"><span class="setVal" id="valBloom">42</span></span></label>
+    <label>Ambient occlusion (SSAO) <input type="checkbox" id="setSsao"></label>
+    <label>Anti-aliasing <select id="setAa"><option value="msaa">MSAA</option><option value="smaa">SMAA</option><option value="off">Off</option></select></label>
+    <label>Ground decals <input type="checkbox" id="setDecals" checked></label>
+
+    <div class="setHead">World</div>
+    <label>Time of day <select id="setTime"><option value="dawn">Dawn</option><option value="day">Midday</option><option value="dusk">Golden dusk</option><option value="night">Night</option><option value="overcast">Overcast</option></select></label>
+    <label>Weather <select id="setWeather"><option value="clear">Clear</option><option value="rain">Rain</option><option value="snow">Snow</option></select></label>
+    <label>Wind <select id="setWind"><option value="calm">Calm</option><option value="breezy">Breezy</option><option value="gusty">Gusty</option></select></label>
+
+    <div class="setHead">Race</div>
+    <label>Difficulty <select id="setDiff"><option value="easy">Easy</option><option value="normal">Normal</option><option value="hard">Hard</option></select></label>
+    <label>Laps <select id="setLaps"><option value="2">2</option><option value="3">3</option><option value="5">5</option></select></label>
+    <label>Rivals <select id="setRivals"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
+
+    <div class="setHead">Camera &amp; HUD</div>
+    <label>Field of view <span><input type="range" id="setFov" min="50" max="80"><span class="setVal" id="valFov">62</span></span></label>
+    <label>Camera shake <span><input type="range" id="setShake" min="0" max="100"><span class="setVal" id="valShake">100</span></span></label>
     <label>Minimap <input type="checkbox" id="setMini" checked></label>
-    <label>Graphics quality <select id="setQual"><option value="low">Low</option><option value="medium">Medium</option><option value="high" selected>High</option></select></label>
-    <label>Time of day <select id="setTime"><option value="day" selected>Day</option><option value="sunset">Golden sunset</option></select></label>
-    <label>Difficulty <select id="setDiff"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select></label>
+    <label>Rival nameplates <input type="checkbox" id="setPlates" checked></label>
+    <label>Speed units <select id="setUnits"><option value="kmh">km/h</option><option value="mph">mph</option></select></label>
+    <label>HUD scale <span><input type="range" id="setHud" min="80" max="130"><span class="setVal" id="valHud">100</span></span></label>
+    <label>FPS counter <input type="checkbox" id="setFps"></label>
+    <label>Fullscreen <button class="miniBtn" id="setFull">Toggle</button></label>
+
+    <div class="setHead">Accessibility &amp; controls</div>
+    <label>Reduce motion <input type="checkbox" id="setReduce"></label>
+    <label>Photosensitive mode <input type="checkbox" id="setPhoto"></label>
+    <label>Colourblind-friendly <input type="checkbox" id="setCb"></label>
+    <label>Toggle spur (hold off) <input type="checkbox" id="setTglSpur"></label>
+    <label>Toggle brace (hold off) <input type="checkbox" id="setTglBrace"></label>
+    <label>Steering sensitivity <span><input type="range" id="setSteer" min="50" max="150"><span class="setVal" id="valSteer">100</span></span></label>
   </div>
   <button class="btn" id="setBack">DONE</button>
 </div>
@@ -418,7 +457,23 @@ function roadTexture(){
 const grassTex=grassTexture(), roadTex=roadTexture();
 const BUNT_COLS=[0xe23b2e,0x2f7fd0,0x37b85e,0xe0b21f,0x9a3bd0,0xee7722];
 // game settings (declared early so load-time buildWorld(0) can read them)
-const SETTINGS={ master:0.8, music:0.55, sfx:0.9, shake:true, quality:'high', minimap:true, difficulty:'normal', timeOfDay:'day' };
+const SETTINGS={
+  master:0.8, music:0.55, sfx:0.9, ambience:0.85,
+  shake:1.0,                                   // 0..1 camera-shake intensity (0 = off)
+  minimap:true, nameplates:true,
+  quality:'high', renderScale:1.0, bloom:0.42, ssao:false, aa:'msaa',   // aa: msaa | smaa | off
+  timeOfDay:'day', weather:'clear', wind:'breezy',
+  difficulty:'normal', laps:3, rivals:4,
+  fov:62, units:'kmh', fps:false, hudScale:1.0,
+  reduceMotion:false, photosensitive:false, colorblind:false,
+  toggleSpur:false, toggleBrace:false, steer:1.0, decals:true,
+};
+// persistence: settings + best times survive between sessions
+function loadSettings(){ try{ Object.assign(SETTINGS, JSON.parse(localStorage.getItem('lns_settings')||'{}')); }catch(e){} }
+function saveSettings(){ try{ localStorage.setItem('lns_settings', JSON.stringify(SETTINGS)); }catch(e){} }
+let bestTimes={}; try{ bestTimes=JSON.parse(localStorage.getItem('lns_best')||'{}'); }catch(e){}
+function recordBest(trackIdx,t){ const k=String(trackIdx); if(t>0 && (!bestTimes[k]||t<bestTimes[k])){ bestTimes[k]=t; try{localStorage.setItem('lns_best',JSON.stringify(bestTimes));}catch(e){} return true; } return false; }
+loadSettings();
 
 // ---------- per-track state (reassigned by buildWorld) ----------
 let curve, waypoints, tangents, N=260, ROAD_W=26, HALF_W=13;
@@ -1652,7 +1707,8 @@ function spawnRacers(){
   // grid behind start line, staggered
   const startT=tangents[2]; const startP=waypoints[2];
   const nrm=new THREE.Vector3(-startT.z,0,startT.x).normalize();
-  for(let i=0;i<NUM;i++){
+  const total=Math.max(2, Math.min(NUM, SETTINGS.rivals+1));
+  for(let i=0;i<total;i++){
     const team=TEAM[i];
     const m=makeRider(team);
     scene.add(m.group);
@@ -1692,6 +1748,11 @@ bindTouch('tStrike',null,true);
 let strikeQueued=false;
 function pressStrike(){ strikeQueued=true; }
 addEventListener('keydown',e=>{ if(e.code==='Space') strikeQueued=true; });
+// optional hold-vs-toggle latches for spur / brace (accessibility)
+let boostLatch=false, braceLatch=false;
+addEventListener('keydown',e=>{ if(e.repeat) return;
+  if((e.code==='ShiftLeft'||e.code==='ShiftRight') && SETTINGS.toggleSpur) boostLatch=!boostLatch;
+  if(e.code==='KeyB' && SETTINGS.toggleBrace) braceLatch=!braceLatch; });
 
 const isTouch = matchMedia('(pointer:coarse)').matches || ('ontouchstart' in window);
 if(isTouch) document.getElementById('touch').style.display='block';
@@ -1837,6 +1898,7 @@ function startRace(){
   buildWorld(selectedTrack);
   spawnRacers();
   Audio.setIntensity(0); Audio.startMusic(); Audio.startAmbient(curTrack.name);
+  boostLatch=false; braceLatch=false;
   paused=false; lastPlace=0; el('banner').classList.remove('finalLap');
   state='countdown'; countdown=3.2; raceTime=0; results=[];
   document.getElementById('start').classList.add('hidden');
@@ -2004,7 +2066,8 @@ function updateRacer(r,dt){
   if(!spinning) r.health=Math.min(1, r.health + TUNE.healthRegen*dt);
 
   // brace state — a fresh press opens a short parry window
-  if(r.isPlayer){ const b=keys['KeyB']||touch.brace; if(b && !r._wasBrace) r._parryT=0.4; r._wasBrace=b; r.bracing=b; }
+  if(r.isPlayer){ const b = SETTINGS.toggleBrace ? braceLatch : (keys['KeyB']||touch.brace);
+    if(b && !r._wasBrace) r._parryT=0.4; r._wasBrace=b; r.bracing=b; }
 
   // throttle / steer.  Spinout = a real spun-out stop you ride out of; a normal
   // stagger keeps you galloping automatically (no dead stop), just no steering/strike.
@@ -2016,7 +2079,7 @@ function updateRacer(r,dt){
   // boost / stamina — over-spur until winded (a stumble + recharge gate); rein in (S) to recover faster
   let boosting=false;
   if(r._winded>0) r._winded-=dt;
-  const wantBoost = r.isPlayer ? (keys['ShiftLeft']||keys['ShiftRight']||touch.boost) : r._aiBoost;
+  const wantBoost = r.isPlayer ? (SETTINGS.toggleSpur?boostLatch:(keys['ShiftLeft']||keys['ShiftRight']||touch.boost)) : r._aiBoost;
   if(wantBoost && r.stamina>0.02 && !stunned && thr>0 && !r._boostLock){
     boosting=true; r.stamina=Math.max(0,r.stamina-TUNE.staminaDrain*dt);
     if(r.stamina<=0.02){ r._boostLock=true; r._winded=0.85; boosting=false;       // burned out — stumble
@@ -2084,7 +2147,7 @@ function updateRacer(r,dt){
 
   // steering scales with speed (sloppy while winded)
   const speedFac=Math.min(1, r.speed/14);
-  r.heading += steer*TUNE.turn*dt*speedFac*(onGrass?0.7:1)*(r._winded>0?0.45:1);
+  r.heading += steer*TUNE.turn*dt*speedFac*(onGrass?0.7:1)*(r._winded>0?0.45:1)*(r.isPlayer?SETTINGS.steer:1);
 
   // lance
   if(r.lanceCD>0) r.lanceCD-=dt;
@@ -2122,9 +2185,9 @@ function updateRacer(r,dt){
   if(r.wp>N*0.4 && r.wp<N*0.6) r.halfPassed=true;       // reached the far side
   if(prevWp>N-12 && r.wp<12 && r.halfPassed){           // crossed the line going forward
     r.halfPassed=false; r.lap++;
-    if(r.isPlayer){ if(r.lap===2){ banner('FINAL LAP!'); el('banner').classList.add('finalLap'); Audio.sfx.cheer(); Audio.setIntensity(1); }
-      else if(r.lap<3){ banner('LAP '+(r.lap+1)); el('banner').classList.remove('finalLap'); } }
-    if(r.lap>=3 && !r.finished) finishRacer(r);
+    if(r.isPlayer){ if(r.lap===SETTINGS.laps-1){ banner('FINAL LAP!'); el('banner').classList.add('finalLap'); Audio.sfx.cheer(); Audio.setIntensity(1); }
+      else if(r.lap<SETTINGS.laps){ banner('LAP '+(r.lap+1)); el('banner').classList.remove('finalLap'); } }
+    if(r.lap>=SETTINGS.laps && !r.finished) finishRacer(r);
   }
   if(prevWp<12 && r.wp>N-12) r.halfPassed=false;        // backed over the line
   r.prog = r.lap*N + r.wp;
@@ -2175,7 +2238,8 @@ function animateLegs(r,dt){
     m.healthBar.visible=show;
     if(show){ const h=Math.max(0.02,r.health);
       m.healthFill.scale.x=h; m.healthFill.position.x=-(1-h)*1.5;
-      m.healthFill.material.color.setHex(r.health>0.5?0x49d06a:(r.health>0.25?0xe0c23a:0xd0402e));
+      m.healthFill.material.color.setHex(SETTINGS.colorblind ? (r.health>0.5?0x3a86d0:(r.health>0.25?0xe0a13a:0x9a3a6a))
+        : (r.health>0.5?0x49d06a:(r.health>0.25?0xe0c23a:0xd0402e)));
       m.healthBar.rotation.y = Math.atan2(camera.position.x-r.pos.x, camera.position.z-r.pos.z) - m.group.rotation.y;
       m.healthBar.rotation.z = -m.group.rotation.z;
     }
@@ -2242,7 +2306,7 @@ function updateCamera(dt){
     const ang=r.heading+Math.PI + k*Math.PI*1.3, dist=22+k*26, height=13+k*20;
     camera.position.lerp(new THREE.Vector3(r.pos.x+Math.sin(ang)*dist, r.pos.y+height, r.pos.z+Math.cos(ang)*dist), Math.min(1,dt*3.2));
     camera.lookAt(r.pos.x, r.pos.y+3, r.pos.z);
-    camera.fov += (62-camera.fov)*Math.min(1,dt*4); camera.updateProjectionMatrix();
+    camera.fov += (SETTINGS.fov-camera.fov)*Math.min(1,dt*4); camera.updateProjectionMatrix();
     sun.target.position.copy(r.pos); sun.position.copy(r.pos).add(SUN_OFFSET);
     return;
   }
@@ -2255,11 +2319,12 @@ function updateCamera(dt){
   const ahead=tangents[(r.wp+12)%N]; const lookDir=fwd.clone().lerp(new THREE.Vector3(ahead.x,0,ahead.z),0.4).normalize();
   const look=r.pos.clone().addScaledVector(lookDir,14); look.y=r.pos.y+5;
   camera.lookAt(look);
-  // FOV punch: widens with speed for a sense of rush
-  const targetFov = 62 + Math.min(11, Math.max(0,r.speed-42)*0.28) - (r.spinout>0?5:0);
+  // FOV punch: widens with speed for a sense of rush (off with reduce-motion)
+  const punch = SETTINGS.reduceMotion?0:Math.min(11, Math.max(0,r.speed-42)*0.28);
+  const targetFov = SETTINGS.fov + punch - (r.spinout>0?5:0);
   camera.fov += (targetFov-camera.fov)*Math.min(1,dt*4); camera.updateProjectionMatrix();
-  if(shake>0 && SETTINGS.shake){ shake-=dt; camera.position.x+=(Math.random()-.5)*shake*3; camera.position.y+=(Math.random()-.5)*shake*3; }
-  else if(shake>0) shake-=dt;
+  const shk = SETTINGS.reduceMotion?0:SETTINGS.shake;
+  if(shake>0){ shake-=dt; if(shk>0){ camera.position.x+=(Math.random()-.5)*shake*3*shk; camera.position.y+=(Math.random()-.5)*shake*3*shk; } }
   // sun follows
   sun.target.position.copy(r.pos); sun.position.copy(r.pos).add(SUN_OFFSET);
 }
@@ -2280,6 +2345,7 @@ const el=id=>document.getElementById(id);
 const _np=new THREE.Vector3(); const rivalPlates=[];
 (function(){ const cont=el('nameplates'); for(let i=0;i<4;i++){ const d=document.createElement('div'); d.className='nameplate'; d.style.display='none'; cont.appendChild(d); rivalPlates.push(d); } })();
 function updateNameplates(){
+  if(!SETTINGS.nameplates){ for(const p of rivalPlates) p.style.display='none'; return; }
   for(let i=0;i<4;i++){ const r=racers[i+1], plate=rivalPlates[i];
     if(!r){ plate.style.display='none'; continue; }
     _np.set(r.pos.x, r.pos.y+7.5, r.pos.z); _np.project(camera);
@@ -2300,11 +2366,14 @@ function updateHUD(){
   if(r.place!==lastPlace){ lastPlace=r.place; const pn=el('posNum'); pn.textContent=ordinal(r.place);
     pn.classList.remove('popping'); void pn.offsetWidth; pn.classList.add('popping'); }
   else el('posNum').textContent=ordinal(r.place);
-  el('lapNum').textContent=Math.min(r.lap+1,3)+'/3';
+  el('lapNum').textContent=Math.min(r.lap+1,SETTINGS.laps)+'/'+SETTINGS.laps;
   el('timeNum').textContent=fmtTime(raceTime);
-  el('spdNum').textContent=Math.round(r.speed*1.6);
+  el('spdNum').textContent=Math.round(r.speed*(SETTINGS.units==='mph'?1.0:1.6));
+  el('spdUnit').textContent=SETTINGS.units==='mph'?'MPH':'KM/H';
   const hp=Math.round(r.health*100); el('healthFill').style.width=hp+'%'; el('hpTxt').textContent=r.spinout>0?'DOWN':hp+'%';
-  el('healthFill').style.background = r.health>0.5?'linear-gradient(90deg,#3ad07a,#9ff0b0)':(r.health>0.25?'linear-gradient(90deg,#e0c23a,#fff0a0)':'linear-gradient(90deg,#d0402e,#ff7a5a)');
+  el('healthFill').style.background = SETTINGS.colorblind
+    ? (r.health>0.5?'linear-gradient(90deg,#3a86d0,#9fd0ff)':(r.health>0.25?'linear-gradient(90deg,#e0a13a,#ffd890)':'linear-gradient(90deg,#9a3a6a,#d06a9a)'))
+    : (r.health>0.5?'linear-gradient(90deg,#3ad07a,#9ff0b0)':(r.health>0.25?'linear-gradient(90deg,#e0c23a,#fff0a0)':'linear-gradient(90deg,#d0402e,#ff7a5a)'));
   const st=Math.round(r.stamina*100); el('staminaFill').style.width=st+'%';
   el('staTxt').textContent = r._winded>0?'WINDED' : (r._boostLock?'RECOVER':st+'%');
   el('staminaFill').style.background = r._boostLock?'linear-gradient(90deg,#d0703a,#ffb070)':'';
@@ -2360,7 +2429,8 @@ function endRace(){
   state='done';
   Audio.stopMusic(); Audio.stopAmbient(); Audio.setIntensity(0); Audio.sfx.fanfare(); if(player().place===1) Audio.sfx.cheer();
   const conf=[0xff5a5a,0x5a9aff,0x5ad07a,0xffd24a,0xb46bff,0xff8c42];
-  for(let i=0;i<60;i++) Particles.spawnConfetti(player().pos.x, player().pos.y+14, player().pos.z, conf[i%conf.length]);
+  const cn=SETTINGS.photosensitive?16:60;
+  for(let i=0;i<cn;i++) Particles.spawnConfetti(player().pos.x, player().pos.y+14, player().pos.z, conf[i%conf.length]);
   // make remaining AI finish instantly for the board, sorted by progress
   const order=computePlaces();
   let place=0;
@@ -2368,9 +2438,10 @@ function endRace(){
   for(const r of order){ place++; board.push({name:r.team.name, place:r.isPlayer?player().place:place, you:r.isPlayer,
     time: r.finished? fmtTime(r.finishTime) : '—'}); }
   // Grand Prix: award points by finishing order (1st gets NUM, last gets 1)
-  if(gpActive) order.forEach((r,i)=>{ gpPoints[r.idx]=(gpPoints[r.idx]||0)+(NUM-i); });
+  if(gpActive) order.forEach((r,i)=>{ gpPoints[r.idx]=(gpPoints[r.idx]||0)+(racers.length-i); });
   // recompute player's place precisely
   const p=player();
+  const justPB = recordBest(selectedTrack, p.finishTime||raceTime);   // best race time per track (persisted)
   setTimeout(()=>{
     el('hud').classList.add('hidden');
     const win=p.place===1;
@@ -2388,7 +2459,9 @@ function endRace(){
     // remaining standings below
     let html=''; ord.slice(3).forEach((r,i)=>{ html+=`<div class="row"><b>${ordinal(i+4)}</b><span style="color:#${r.team.c.toString(16).padStart(6,'0')}">${r.isPlayer?'★ ':''}${r.team.name}</span></div>`; });
     el('finishBoard').innerHTML=html;
-    el('finishSub').textContent = `You finished ${ordinal(p.place)} of ${NUM} · ${p._hits||0} lance hits · ${p._spins||0} spun out · ${fmtTime(p.finishTime||raceTime)}`;
+    const bt=bestTimes[String(selectedTrack)];
+    el('finishSub').textContent = `You finished ${ordinal(p.place)} of ${racers.length} · ${p._hits||0} lance hits · ${p._spins||0} spun out · ${fmtTime(p.finishTime||raceTime)}`
+      + (bt?`  ·  best ${fmtTime(bt)}${justPB?' ★ NEW!':''}`:'');
     // Grand Prix overlay: round indicator, cumulative standings, dynamic button
     const round=el('finishRound'), gpEl=el('gpStandings');
     if(gpActive){
@@ -2414,12 +2487,14 @@ function endRace(){
 // ===================================================================
 let last=performance.now();
 let hitStop=0, slowmo=0;   // real-time seconds
+let _fpsAcc=0,_fpsN=0;
 function frame(now){
   requestAnimationFrame(frame);
   let realDt=(now-last)/1000; last=now; if(realDt>0.05)realDt=0.05;
+  if(SETTINGS.fps){ _fpsAcc+=realDt; _fpsN++; if(_fpsAcc>=0.5){ el('fpsBox').textContent=Math.round(_fpsN/_fpsAcc)+' fps'; _fpsAcc=0; _fpsN=0; } }
   if(hitStop>0){ hitStop-=realDt; composer.render(); return; }   // brief freeze on impact
   let ts=1;
-  if(slowmo>0){ slowmo-=realDt; ts=0.35; }                       // slow-mo on spin-out
+  if(slowmo>0){ slowmo-=realDt; ts=SETTINGS.reduceMotion?1:0.35; }   // slow-mo on spin-out (off with reduce-motion)
   step(realDt*ts);
   composer.render();
 }
@@ -2480,12 +2555,24 @@ requestAnimationFrame(frame);
 //  UI wiring + resize
 // ===================================================================
 let paused=false, settingsReturn='start';
+function bloomStrength(){ return SETTINGS.photosensitive ? Math.min(0.22, SETTINGS.bloom) : SETTINGS.bloom; }
 function applyQuality(){
   const q=SETTINGS.quality;
   renderer.shadowMap.enabled = q!=='low'; sun.castShadow = q!=='low';
-  bloom.strength = q==='low'?0.16:(q==='medium'?0.3:0.42);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, q==='high'?2:(q==='medium'?1.5:1)));
+  bloom.strength = bloomStrength();
+  const base = q==='high'?2:(q==='medium'?1.5:1);
+  renderer.setPixelRatio(Math.min(devicePixelRatio*SETTINGS.renderScale, base*SETTINGS.renderScale));
+  if(typeof applyPasses==='function') applyPasses();
   scene.traverse(o=>{ if(o.material){ const a=Array.isArray(o.material)?o.material:[o.material]; a.forEach(m=>m.needsUpdate=true); } });
+}
+function applyHudScale(){ const h=el('hud'); h.style.transformOrigin='50% 50%'; h.style.transform = SETTINGS.hudScale===1?'':('scale('+SETTINGS.hudScale+')'); }
+// apply every persisted setting to the live systems (called at startup)
+function applyAll(){
+  applyQuality(); applyHudScale();
+  el('fpsBox').style.display = SETTINGS.fps?'block':'none';
+  camera.fov=SETTINGS.fov; camera.updateProjectionMatrix();
+  if(typeof applyWeather==='function') applyWeather();
+  if(curTrack) applyTimeOfDay();
 }
 function openSettings(from){ settingsReturn=from; syncSettingsUI();
   el('start').classList.add('hidden'); el('finish').classList.add('hidden'); el('settings').classList.remove('hidden');
@@ -2493,11 +2580,18 @@ function openSettings(from){ settingsReturn=from; syncSettingsUI();
 function closeSettings(){ el('settings').classList.add('hidden');
   if(settingsReturn==='race') paused=false; else el('start').classList.remove('hidden'); }
 function syncSettingsUI(){
-  el('setMaster').value=SETTINGS.master*100|0; el('valMaster').textContent=SETTINGS.master*100|0;
-  el('setMusic').value=SETTINGS.music*100|0; el('valMusic').textContent=SETTINGS.music*100|0;
-  el('setSfx').value=SETTINGS.sfx*100|0; el('valSfx').textContent=SETTINGS.sfx*100|0;
-  el('setShake').checked=SETTINGS.shake; el('setMini').checked=SETTINGS.minimap;
-  el('setQual').value=SETTINGS.quality; el('setDiff').value=SETTINGS.difficulty; el('setTime').value=SETTINGS.timeOfDay;
+  const R=(id,v,val)=>{ el(id).value=v; if(val) el(val).textContent=v; };
+  R('setMaster',SETTINGS.master*100|0,'valMaster'); R('setMusic',SETTINGS.music*100|0,'valMusic');
+  R('setSfx',SETTINGS.sfx*100|0,'valSfx'); R('setAmb',SETTINGS.ambience*100|0,'valAmb');
+  el('setQual').value=SETTINGS.quality; R('setScale',SETTINGS.renderScale*100|0,'valScale'); R('setBloom',SETTINGS.bloom*100|0,'valBloom');
+  el('setSsao').checked=SETTINGS.ssao; el('setAa').value=SETTINGS.aa; el('setDecals').checked=SETTINGS.decals;
+  el('setTime').value=SETTINGS.timeOfDay; el('setWeather').value=SETTINGS.weather; el('setWind').value=SETTINGS.wind;
+  el('setDiff').value=SETTINGS.difficulty; el('setLaps').value=String(SETTINGS.laps); el('setRivals').value=String(SETTINGS.rivals);
+  R('setFov',SETTINGS.fov,'valFov'); R('setShake',SETTINGS.shake*100|0,'valShake');
+  el('setMini').checked=SETTINGS.minimap; el('setPlates').checked=SETTINGS.nameplates; el('setUnits').value=SETTINGS.units;
+  R('setHud',SETTINGS.hudScale*100|0,'valHud'); el('setFps').checked=SETTINGS.fps;
+  el('setReduce').checked=SETTINGS.reduceMotion; el('setPhoto').checked=SETTINGS.photosensitive; el('setCb').checked=SETTINGS.colorblind;
+  el('setTglSpur').checked=SETTINGS.toggleSpur; el('setTglBrace').checked=SETTINGS.toggleBrace; R('setSteer',SETTINGS.steer*100|0,'valSteer');
 }
 
 el('startBtn').onclick=()=>{ Audio.resume(); if(raceMode==='gp') startGrandPrix(); else startRace(); };
@@ -2527,15 +2621,40 @@ function handleAgain(){ el('finish').classList.add('hidden');
 }
 function backToMenu(){ state='menu'; el('hud').classList.add('hidden'); el('finish').classList.add('hidden'); el('start').classList.remove('hidden'); buildWorld(selectedTrack); }
 
-// settings inputs
-el('setMaster').oninput=e=>{ SETTINGS.master=e.target.value/100; el('valMaster').textContent=e.target.value; Audio.resume(); Audio.applyVolumes(); };
-el('setMusic').oninput =e=>{ SETTINGS.music =e.target.value/100; el('valMusic').textContent=e.target.value; Audio.applyVolumes(); };
-el('setSfx').oninput   =e=>{ SETTINGS.sfx   =e.target.value/100; el('valSfx').textContent=e.target.value; Audio.resume(); Audio.applyVolumes(); Audio.sfx.lance(); };
-el('setShake').onchange=e=>SETTINGS.shake=e.target.checked;
-el('setMini').onchange =e=>SETTINGS.minimap=e.target.checked;
-el('setQual').onchange =e=>{ SETTINGS.quality=e.target.value; applyQuality(); };
-el('setTime').onchange =e=>{ SETTINGS.timeOfDay=e.target.value; applyTimeOfDay(); };
-el('setDiff').onchange =e=>SETTINGS.difficulty=e.target.value;
+// settings inputs — each updates SETTINGS, applies live, and persists
+const onR=(id,val,fn)=>{ el(id).oninput=e=>{ fn(+e.target.value); if(val) el(val).textContent=e.target.value; saveSettings(); }; };
+const onC=(id,fn)=>{ el(id).onchange=e=>{ fn(e.target.checked); saveSettings(); }; };
+const onSel=(id,fn)=>{ el(id).onchange=e=>{ fn(e.target.value); saveSettings(); }; };
+onR('setMaster','valMaster',v=>{ SETTINGS.master=v/100; Audio.resume(); Audio.applyVolumes(); });
+onR('setMusic','valMusic',v=>{ SETTINGS.music=v/100; Audio.applyVolumes(); });
+onR('setSfx','valSfx',v=>{ SETTINGS.sfx=v/100; Audio.resume(); Audio.applyVolumes(); Audio.sfx.lance(); });
+onR('setAmb','valAmb',v=>{ SETTINGS.ambience=v/100; Audio.applyVolumes(); });
+onSel('setQual',v=>{ SETTINGS.quality=v; applyQuality(); });
+onR('setScale','valScale',v=>{ SETTINGS.renderScale=v/100; applyQuality(); });
+onR('setBloom','valBloom',v=>{ SETTINGS.bloom=v/100; bloom.strength=bloomStrength(); });
+onC('setSsao',v=>{ SETTINGS.ssao=v; applyQuality(); });
+onSel('setAa',v=>{ SETTINGS.aa=v; applyQuality(); });
+onC('setDecals',v=>{ SETTINGS.decals=v; });
+onSel('setTime',v=>{ SETTINGS.timeOfDay=v; applyTimeOfDay(); });
+onSel('setWeather',v=>{ SETTINGS.weather=v; if(typeof applyWeather==='function') applyWeather(); });
+onSel('setWind',v=>{ SETTINGS.wind=v; });
+onSel('setDiff',v=>{ SETTINGS.difficulty=v; });
+onSel('setLaps',v=>{ SETTINGS.laps=+v; });
+onSel('setRivals',v=>{ SETTINGS.rivals=+v; });
+onR('setFov','valFov',v=>{ SETTINGS.fov=v; camera.fov=v; camera.updateProjectionMatrix(); });
+onR('setShake','valShake',v=>{ SETTINGS.shake=v/100; });
+onC('setMini',v=>{ SETTINGS.minimap=v; });
+onC('setPlates',v=>{ SETTINGS.nameplates=v; });
+onSel('setUnits',v=>{ SETTINGS.units=v; });
+onR('setHud','valHud',v=>{ SETTINGS.hudScale=v/100; applyHudScale(); });
+onC('setFps',v=>{ SETTINGS.fps=v; el('fpsBox').style.display=v?'block':'none'; });
+onC('setReduce',v=>{ SETTINGS.reduceMotion=v; });
+onC('setPhoto',v=>{ SETTINGS.photosensitive=v; bloom.strength=bloomStrength(); });
+onC('setCb',v=>{ SETTINGS.colorblind=v; });
+onC('setTglSpur',v=>{ SETTINGS.toggleSpur=v; });
+onC('setTglBrace',v=>{ SETTINGS.toggleBrace=v; });
+onR('setSteer','valSteer',v=>{ SETTINGS.steer=v/100; });
+el('setFull').onclick=()=>{ if(document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen(); };
 
 // Esc pauses into settings during a race
 addEventListener('keydown',e=>{ if(e.code==='Escape'){
@@ -2543,7 +2662,7 @@ addEventListener('keydown',e=>{ if(e.code==='Escape'){
   else if(state==='race'||state==='countdown') openSettings('race');
 }});
 
-applyQuality();
+applyAll();
 
 addEventListener('resize',()=>{
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
