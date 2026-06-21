@@ -166,6 +166,8 @@
   <div class="trackSel" id="trackSel">
     <div class="trackCard selected" data-track="0"><div class="tname">Tourney Green</div><div class="tblurb">Flat festival meadow — wide &amp; forgiving</div></div>
     <div class="trackCard" data-track="1"><div class="tname">Highland Run</div><div class="tblurb">Rolling hills, tight S-bends &amp; a windmill</div></div>
+    <div class="trackCard" data-track="2"><div class="tname">Rivermeadow</div><div class="tblurb">Long river valley — ford the water twice</div></div>
+    <div class="trackCard" data-track="3"><div class="tname">Highmoor Crag</div><div class="tblurb">Steep climb to a clifftop fort &amp; gorge</div></div>
   </div>
   <div class="btnRow">
     <button class="btn" id="startBtn">RIDE</button>
@@ -401,7 +403,7 @@ const SETTINGS={ master:0.8, music:0.55, sfx:0.9, shake:true, quality:'high', mi
 
 // ---------- per-track state (reassigned by buildWorld) ----------
 let curve, waypoints, tangents, N=260, ROAD_W=26, HALF_W=13;
-let curTrack=null, W=null, obstacles=[], windmills=[], crowds=[], birds=[], flames=[], swayers=[], butterflies=[];
+let curTrack=null, W=null, obstacles=[], windmills=[], crowds=[], birds=[], flames=[], swayers=[], butterflies=[], fords=[];
 let worldTime=0;
 const WALL_INNER=3.0, RIDER_RAD=0.85;     // wall inner face = HALF_W+WALL_INNER; collision clamp leaves RIDER_RAD gap
 function terrainHeight(x,z){ return curTrack ? curTrack.height(x,z) : 0; }
@@ -522,17 +524,30 @@ function distToTrack(x,z){ let best=1e9; for(let i=0;i<N;i+=3){ const dx=x-waypo
 
 // ---------- track definitions ----------
 const TRACKS=[
- { name:'Tourney Green', blurb:'Flat festival meadow — wide & forgiving', roadW:26,
+ { name:'Tourney Green', blurb:'Flat festival meadow — wide & forgiving', roadW:26, laps:5,
    ctrl:[[0,-150],[95,-120],[150,-30],[135,60],[70,135],[-30,150],[-120,110],[-160,20],[-130,-80],[-55,-140]],
    sky:{top:'#2f7bd6',mid:'#bfe2f5',bot:'#ffe9c2'}, fog:{c:'#f3e2bd',near:300,far:880},
    ground:0xeaf2dc, height:(x,z)=>0, grandstands:[20,110,190], landmarks:buildGreenLandmarks },
- { name:'Highland Run', blurb:'Rolling hills, tight S-bends & a windmill', roadW:24,
+ { name:'Highland Run', blurb:'Rolling hills, tight S-bends & a windmill', roadW:24, laps:5,
    ctrl:[[0,-170],[85,-158],[120,-96],[78,-48],[150,-2],[120,72],[52,92],[84,152],[-22,162],[-96,124],[-66,52],[-152,32],[-168,-52],[-104,-118],[-46,-152]],
    sky:{top:'#3f86c8',mid:'#cfe6e0',bot:'#eef0d0'}, fog:{c:'#dde9cf',near:260,far:820},
    ground:0xdfeccb, grandstands:[16,150], gateAt:62, windmillAt:[150,150], landmarks:buildHighlandLandmarks,
    height:(x,z)=>{ let h=Math.sin(x*0.011+0.5)*8 + Math.cos(z*0.012-0.3)*7 + Math.sin((x*0.7-z)*0.006)*5;
      const dx=x-150,dz=z-150; h+=16*Math.exp(-(dx*dx+dz*dz)/9000);     // windmill knoll
      const vx=x+130,vz=z+70; h-=7*Math.exp(-(vx*vx+vz*vz)/14000);      // a hollow
+     return h; } },
+ { name:'Rivermeadow', blurb:'Long river valley — ford the water twice', roadW:25, laps:4,
+   ctrl:[[330,0],[231,96],[212,212],[92,222],[0,320],[-103,250],[-219,219],[-226,94],[-320,0],[-268,-111],[-212,-212],[-96,-231],[0,-330],[103,-250],[212,-212],[222,-92]],
+   sky:{top:'#2f7bd6',mid:'#cfe6f0',bot:'#eaf2d2'}, fog:{c:'#e8eccf',near:340,far:940},
+   ground:0xe6f0d6, grandstands:[24,160], fords:[70,180], landmarks:buildRivermeadowLandmarks,
+   height:(x,z)=> Math.sin(x*0.008+0.4)*4 + Math.cos(z*0.0085-0.2)*4 },
+ { name:'Highmoor Crag', blurb:'Steep climb to a clifftop fort & gorge', roadW:24, laps:4,
+   ctrl:[[0,-280],[150,-240],[265,-130],[205,95],[270,190],[120,250],[-40,275],[-185,205],[-275,85],[-225,-85],[-135,-195],[-45,-255]],
+   sky:{top:'#3a80c4',mid:'#cfe2dc',bot:'#e6ecc8'}, fog:{c:'#d8e4cc',near:280,far:880},
+   ground:0xdce8c4, grandstands:[18,140], peak:[205,95], landmarks:buildHighmoorLandmarks,
+   height:(x,z)=>{ let h=Math.sin(x*0.009-0.3)*9 + Math.cos(z*0.0095+0.4)*9;
+     const px=x-205,pz=z-95; h+=46*Math.exp(-(px*px+pz*pz)/24000);        // the crag the track summits
+     const gx=x+255,gz=z+150; h-=26*Math.exp(-(gx*gx+gz*gz)/15000);       // a low hollow / gorge floor
      return h; } },
 ];
 
@@ -543,7 +558,7 @@ function disposeObj(o){ o.traverse(n=>{ if(n.geometry)n.geometry.dispose();
 
 function buildWorld(idx){
   if(W){ scene.remove(W); disposeObj(W); }
-  W=new THREE.Group(); scene.add(W); obstacles=[]; windmills=[]; crowds=[]; birds=[]; flames=[]; swayers=[]; butterflies=[];
+  W=new THREE.Group(); scene.add(W); obstacles=[]; windmills=[]; crowds=[]; birds=[]; flames=[]; swayers=[]; butterflies=[]; fords=[];
   curTrack=TRACKS[idx]; ROAD_W=curTrack.roadW; HALF_W=ROAD_W/2; N=260;
   skyMat.uniforms.top.value.set(curTrack.sky.top); skyMat.uniforms.mid.value.set(curTrack.sky.mid); skyMat.uniforms.bot.value.set(curTrack.sky.bot);
   scene.fog.color.set(curTrack.fog.c); scene.fog.near=curTrack.fog.near; scene.fog.far=curTrack.fog.far;
@@ -551,6 +566,7 @@ function buildWorld(idx){
   curve=new THREE.CatmullRomCurve3(ctrl,true,'catmullrom',0.5);
   waypoints=curve.getSpacedPoints(N);
   tangents=[]; for(let i=0;i<=N;i++){ const t=curve.getTangentAt((i%N)/N); tangents.push(new THREE.Vector3(t.x,0,t.z).normalize()); }
+  if(curTrack.fords){ for(const fi of curTrack.fords){ const p=waypoints[fi]; fords.push({x:p.x,z:p.z,r:HALF_W+6}); } }
   buildMountains();
   buildGround(); buildRoadMesh(); buildStartLine(); buildWall(); buildWallShields(); buildDeco();
   if(curTrack.landmarks) curTrack.landmarks();
@@ -992,6 +1008,51 @@ function buildGate(wpIdx){
   // portcullis bars hanging in the arch
   for(let i=-2;i<=2;i++){ const bar=new THREE.Mesh(new THREE.BoxGeometry(0.5,7,0.5), new THREE.MeshStandardMaterial({color:0x55504a,metalness:.5,roughness:.6}));
     const bx=p.x+n.x*i*2.0, bz=p.z+n.z*i*2.0; bar.position.set(bx,yb-6.5,bz); W.add(bar); }
+}
+
+// an arched stone bridge spanning across a flow direction t at point p
+function buildStoneBridge(p, t){
+  const n=new THREE.Vector3(-t.z,0,t.x).normalize(); const y=terrainHeight(p.x,p.z);
+  const stone=new THREE.MeshStandardMaterial({map:stoneWallTex, normalMap:stoneNormalTex, color:0xcabfa6, roughness:.95});
+  const deck=new THREE.Mesh(new THREE.BoxGeometry(30,1.4,8),stone); deck.position.set(p.x,y+3.4,p.z); deck.lookAt(p.x+t.x,y+3.4,p.z+t.z); deck.castShadow=true; W.add(deck);
+  for(const s of [1,-1]){ const par=new THREE.Mesh(new THREE.BoxGeometry(30,1.7,0.9),stone); par.position.set(p.x+t.x*s*3.2,y+4.7,p.z+t.z*s*3.2); par.lookAt(p.x+t.x*s*3.2+t.x,y+4.7,p.z+t.z*s*3.2+t.z); W.add(par); }
+  for(const s of [1.6,-1.6,0]){ const pil=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.8,8,8),stone); pil.position.set(p.x+n.x*s*5,y-1,p.z+n.z*s*5); pil.castShadow=true; W.add(pil); }
+}
+
+// ---- Rivermeadow ----
+function buildRivermeadowLandmarks(){
+  const A=waypoints[curTrack.fords[0]], B=waypoints[curTrack.fords[1]];
+  const riverPts=[ A.clone().multiplyScalar(1.18), A.clone(), new THREE.Vector3(A.x*0.4,0,A.z*0.4),
+                   new THREE.Vector3(0,0,0), new THREE.Vector3(B.x*0.4,0,B.z*0.4), B.clone(), B.clone().multiplyScalar(1.18) ];
+  riverPts.forEach(v=>v.y=0);
+  const rc=new THREE.CatmullRomCurve3(riverPts,false,'catmullrom',0.5);
+  const segs=140, RW=9, pos=[],uv=[],idx=[];
+  for(let i=0;i<=segs;i++){ const u=i/segs; const p=rc.getPointAt(u); const t=rc.getTangentAt(u); const n=new THREE.Vector3(-t.z,0,t.x).normalize();
+    const lx=p.x+n.x*RW, lz=p.z+n.z*RW, rx=p.x-n.x*RW, rz=p.z-n.z*RW;
+    pos.push(lx,terrainHeight(lx,lz)+0.08,lz, rx,terrainHeight(rx,rz)+0.08,rz); uv.push(0,i*0.4,1,i*0.4); }
+  for(let i=0;i<segs;i++){ const a=i*2,b=i*2+1,c=i*2+2,d=i*2+3; idx.push(a,b,c,b,d,c); }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3)); g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2)); g.setIndex(idx); g.computeVertexNormals();
+  const river=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0x3f74a8, metalness:.6, roughness:.1, transparent:true, opacity:0.85, envMapIntensity:1.7, normalMap:waterNormalTex, normalScale:new THREE.Vector2(0.35,0.35)})); W.add(river);
+  // reeds along the banks
+  const reedMat=new THREE.MeshStandardMaterial({color:0x6a9a4a,roughness:1});
+  for(let i=3;i<segs;i+=4){ const u=i/segs; const p=rc.getPointAt(u); const t=rc.getTangentAt(u); const n=new THREE.Vector3(-t.z,0,t.x).normalize();
+    for(const s of [1,-1]){ const rx=p.x+n.x*s*(RW+1.2), rz=p.z+n.z*s*(RW+1.2);
+      for(let k=0;k<3;k++){ const reed=new THREE.Mesh(new THREE.ConeGeometry(0.12,2.2+Math.random(),4),reedMat); reed.position.set(rx+(Math.random()-.5),terrainHeight(rx,rz)+1.1,rz+(Math.random()-.5)); reed.rotation.z=(Math.random()-.5)*0.3; W.add(reed); } } }
+  buildStoneBridge(rc.getPointAt(0.5), rc.getTangentAt(0.5));            // grand stone bridge over the river
+  const mp=rc.getPointAt(0.32), mt=rc.getTangentAt(0.32); const mn=new THREE.Vector3(-mt.z,0,mt.x).normalize();
+  buildWindmill(mp.x+mn.x*(RW+7), mp.z+mn.z*(RW+7));                     // watermill beside the river
+}
+
+// ---- Highmoor Crag ----
+function buildHighmoorLandmarks(){
+  const [px,pz]=curTrack.peak; buildCastle(px,pz);                      // clifftop fort on the crag
+  buildStandingStones(-110,-30);
+  buildStoneBridge(new THREE.Vector3(-255,0,-150), new THREE.Vector3(1,0,0.35).normalize());   // bridge over the gorge hollow
+}
+function buildStandingStones(cx,cz){
+  const stone=new THREE.MeshStandardMaterial({map:stoneWallTex, normalMap:stoneNormalTex, color:0x9a948a, roughness:.96});
+  for(let i=0;i<8;i++){ const a=i/8*Math.PI*2, r=15; const x=cx+Math.cos(a)*r, z=cz+Math.sin(a)*r; const h=6+Math.random()*4;
+    const s=new THREE.Mesh(new THREE.BoxGeometry(2.6,h,1.7),stone); s.position.set(x,terrainHeight(x,z)+h/2-0.4,z); s.rotation.y=Math.random()*0.5; s.castShadow=true; W.add(s); }
 }
 
 buildWorld(0);   // build a backdrop for the menu
@@ -1554,6 +1615,11 @@ function updateRacer(r,dt){
   r.speed -= slope*TUNE.slopeForce*dt;
   r.speed=Math.max(0,r.speed);
   if(r.speed>maxV) r.speed += (maxV-r.speed)*Math.min(1,dt*3);   // ease toward cap; downhill can briefly exceed
+  // fords: riding through the river drags you down and throws up spray
+  if(fords.length){ let inFord=false; for(const f of fords){ if(dist2D(r.pos.x,r.pos.z,f.x,f.z)<f.r){ inFord=true; break; } }
+    if(inFord){ r.speed -= r.speed*1.5*dt;
+      if(state==='race' && r.speed>10){ r._splashT=(r._splashT||0)-dt; if(r._splashT<=0){ r._splashT=0.04;
+        const fwx=Math.sin(r.heading), fwz=Math.cos(r.heading); Particles.spawnDust(r.pos.x-fwx*1.5, r.pos.y+0.3, r.pos.z-fwz*1.5, 0.9, r.pos.y); } } } }
 
   // steering scales with speed
   const speedFac=Math.min(1, r.speed/14);
@@ -1590,9 +1656,10 @@ function updateRacer(r,dt){
   if(r.wp>N*0.4 && r.wp<N*0.6) r.halfPassed=true;       // reached the far side
   if(prevWp>N-12 && r.wp<12 && r.halfPassed){           // crossed the line going forward
     r.halfPassed=false; r.lap++;
-    if(r.isPlayer){ if(r.lap===2){ banner('FINAL LAP!'); el('banner').classList.add('finalLap'); Audio.sfx.cheer(); }
-      else if(r.lap<3){ banner('LAP '+(r.lap+1)); el('banner').classList.remove('finalLap'); } }
-    if(r.lap>=3 && !r.finished) finishRacer(r);
+    const LAPS=curTrack.laps||3;
+    if(r.isPlayer){ if(r.lap===LAPS-1){ banner('FINAL LAP!'); el('banner').classList.add('finalLap'); Audio.sfx.cheer(); }
+      else if(r.lap<LAPS){ banner('LAP '+(r.lap+1)); el('banner').classList.remove('finalLap'); } }
+    if(r.lap>=LAPS && !r.finished) finishRacer(r);
   }
   if(prevWp<12 && r.wp>N-12) r.halfPassed=false;        // backed over the line
   r.prog = r.lap*N + r.wp;
@@ -1768,7 +1835,7 @@ function updateHUD(){
   if(r.place!==lastPlace){ lastPlace=r.place; const pn=el('posNum'); pn.textContent=ordinal(r.place);
     pn.classList.remove('popping'); void pn.offsetWidth; pn.classList.add('popping'); }
   else el('posNum').textContent=ordinal(r.place);
-  el('lapNum').textContent=Math.min(r.lap+1,3)+'/3';
+  { const L=curTrack.laps||3; el('lapNum').textContent=Math.min(r.lap+1,L)+'/'+L; }
   el('timeNum').textContent=fmtTime(raceTime);
   el('spdNum').textContent=Math.round(r.speed*1.6);
   const hp=Math.round(r.health*100); el('healthFill').style.width=hp+'%'; el('hpTxt').textContent=r.spinout>0?'DOWN':hp+'%';
