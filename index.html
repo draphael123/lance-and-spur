@@ -478,7 +478,7 @@ buildEnv('day');
 const composer = new EffectComposer(renderer);
 const renderPass = new RenderPass(scene, camera);
 let ssaoPass=null, smaaPass=null;            // built lazily when first enabled
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.42, 0.85, 0.82);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.52, 0.8, 0.8);
 const GradeShader = {
   uniforms:{ tDiffuse:{value:null}, contrast:{value:1.07}, sat:{value:1.14}, warm:{value:0.022} },
   vertexShader:'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
@@ -1089,12 +1089,26 @@ function makeGrandstand(){
 
 // ---------- scenery ----------
 function buildMountains(){
-  const rock=new THREE.MeshStandardMaterial({color:0x8290a8, roughness:.95, fog:false});
-  const snow=new THREE.MeshStandardMaterial({color:0xe6ecf2, roughness:.9, fog:false});
-  for(let i=0;i<34;i++){ const a=i/34*Math.PI*2 + (Math.random()-.5)*0.12, rad=1050+Math.random()*320;
-    const h=130+Math.random()*190, r=h*0.72, x=Math.cos(a)*rad, z=Math.sin(a)*rad;
-    const m=new THREE.Mesh(new THREE.ConeGeometry(r,h,5), rock); m.position.set(x,h/2-24,z); m.rotation.y=Math.random()*6; W.add(m);
-    const cap=new THREE.Mesh(new THREE.ConeGeometry(r*0.42,h*0.34,5), snow); cap.position.set(x,h*0.84-24,z); cap.rotation.y=m.rotation.y; W.add(cap);
+  // layered horizon for real depth (aerial perspective): far snow peaks hazed into the sky,
+  // then a nearer ring of rolling foothills tinted to the biome — kills the "flat cone" prototype look.
+  const th=curTrack.theme, winter=th==='winter';
+  const skyMid=new THREE.Color(curTrack.sky.mid), skyTop=new THREE.Color(curTrack.sky.top);
+  const hillBase = winter?0xdfe8f0 : th==='crag'?0x8d8a82 : th==='highland'?0x6f7458 : th==='water'?0x6f8a55 : 0x6e9a52;
+  // FAR peaks — strongly hazed toward the sky so their silhouettes melt into the horizon
+  const farCol=new THREE.Color(winter?0xc6d4e4:0x8694ac).lerp(skyMid,0.6);
+  const peakMat=new THREE.MeshStandardMaterial({color:farCol, roughness:1, fog:false, flatShading:true});
+  const snowMat=new THREE.MeshStandardMaterial({color:new THREE.Color(0xeef3f8).lerp(skyMid,0.35), roughness:.9, fog:false, flatShading:true});
+  for(let i=0;i<46;i++){ const a=i/46*Math.PI*2 + (Math.random()-.5)*0.14, rad=1180+Math.random()*420;
+    const h=150+Math.random()*210, r=h*(0.66+Math.random()*0.22), x=Math.cos(a)*rad, z=Math.sin(a)*rad;
+    const m=new THREE.Mesh(new THREE.ConeGeometry(r,h,7), peakMat); m.position.set(x,h/2-30,z); m.scale.x=0.8+Math.random()*0.5; m.rotation.y=Math.random()*6; W.add(m);
+    if(winter||Math.random()<0.7){ const cap=new THREE.Mesh(new THREE.ConeGeometry(r*(winter?0.6:0.4),h*(winter?0.5:0.32),7), snowMat); cap.position.set(x,h*(winter?0.78:0.85)-30,z); cap.scale.x=m.scale.x; cap.rotation.y=m.rotation.y; W.add(cap); }
+  }
+  // NEAR foothills — softer, lower, biome-coloured, lightly hazed; reads as middle distance
+  const hillMat=new THREE.MeshStandardMaterial({color:new THREE.Color(hillBase).lerp(skyMid,0.28), roughness:1, fog:false, flatShading:true});
+  for(let i=0;i<34;i++){ const a=i/34*Math.PI*2 + (Math.random()-.5)*0.2, rad=780+Math.random()*230;
+    const h=58+Math.random()*86, r=h*(1.1+Math.random()*0.5), x=Math.cos(a)*rad, z=Math.sin(a)*rad;
+    const m=new THREE.Mesh(new THREE.ConeGeometry(r,h,6), hillMat); m.position.set(x,h/2-26,z); m.scale.set(1+Math.random()*0.6,0.7+Math.random()*0.3,1); m.rotation.y=Math.random()*6; W.add(m);
+    if(winter){ const cap=new THREE.Mesh(new THREE.ConeGeometry(r*0.7,h*0.5,6), snowMat); cap.position.set(x,h*0.62-26,z); cap.scale.x=m.scale.x; cap.rotation.y=m.rotation.y; W.add(cap); }
   }
 }
 function makeStall(awnCol){
@@ -1657,21 +1671,31 @@ function buildHighmoorLandmarks(){
   if(curTrack.ledge) buildLedgeMarkers(curTrack.ledge);                       // pennants flagging the wall-less ledge
   buildEagles();
 }
-// a cave/tunnel you drive THROUGH: stone walls + ceiling over the lane, lit by torches
+// a cave/tunnel you drive THROUGH — ONE continuous swept-arch shell (no gaps, fully opaque), lit by torches
 function buildTunnel(a,b){
-  const dark=new THREE.MeshStandardMaterial({color:0x7c766a, roughness:1, map:stoneWallTex, normalMap:stoneNormalTex, normalScale:new THREE.Vector2(0.9,0.9), side:THREE.DoubleSide, emissive:0x231b10, emissiveIntensity:1});
-  const H=11, off=HALF_W+WALL_INNER+0.4, span=((b-a)%N+N)%N;
+  const dark=new THREE.MeshStandardMaterial({color:0x6a6358, roughness:1, map:stoneWallTex, normalMap:stoneNormalTex, normalScale:new THREE.Vector2(0.9,0.9), side:THREE.DoubleSide, emissive:0x281e12, emissiveIntensity:1});
+  const off=HALF_W+WALL_INNER+0.8, wallH=7.5, archH=4.8, span=((b-a)%N+N)%N;
+  // arched cross-section: left base -> up the wall -> over a domed ceiling -> down the right wall -> right base
+  const prof=[[-off,0],[-off,wallH]]; const AR=7;
+  for(let s=0;s<=AR;s++){ const ang=Math.PI*(1-s/AR); prof.push([Math.cos(ang)*off, wallH+Math.sin(ang)*archH]); }
+  prof.push([off,wallH],[off,0]);
+  const P=prof.length, pos=[],uv=[],idx=[];
+  for(let k=0;k<=span;k++){ const i=(a+k)%N, p=waypoints[i], t=tangents[i]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
+    const floor=terrainHeight(p.x,p.z)-0.2;
+    for(let j=0;j<P;j++){ pos.push(p.x+n.x*prof[j][0], floor+prof[j][1], p.z+n.z*prof[j][0]); uv.push(j/(P-1)*2.5, k*0.45); } }
+  for(let k=0;k<span;k++) for(let j=0;j<P-1;j++){ const o=k*P+j; idx.push(o,o+P,o+1, o+1,o+P,o+P+1); }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2)); g.setIndex(idx); g.computeVertexNormals();
+  const tube=new THREE.Mesh(g,dark); tube.castShadow=true; tube.receiveShadow=true; W.add(tube);
+  // torches + cave-mouth lintels
   for(let k=0;k<=span;k++){ const i=(a+k)%N, p=waypoints[i], t=tangents[i]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
     const cy=terrainHeight(p.x,p.z), ang=Math.atan2(t.x,t.z);
-    if(k<span){ const j=(a+k+1)%N, p2=waypoints[j], cy2=terrainHeight(p2.x,p2.z), segLen=dist2D(p.x,p.z,p2.x,p2.z)+0.6;
-      const ceil=new THREE.Mesh(new THREE.BoxGeometry(off*2+2,1.0,segLen),dark); ceil.position.set((p.x+p2.x)/2,(cy+cy2)/2+H,(p.z+p2.z)/2); ceil.rotation.y=Math.atan2(t.x,t.z); ceil.receiveShadow=true; W.add(ceil);
-      for(const s of [1,-1]){ const wx=p.x+n.x*s*off, wz=p.z+n.z*s*off; const wall=new THREE.Mesh(new THREE.BoxGeometry(1.2,H+1,segLen),dark); wall.position.set((wx+p2.x+n.x*s*off)/2,cy+(H+1)/2,(wz+p2.z+n.z*s*off)/2); wall.rotation.y=ang; wall.castShadow=true; wall.receiveShadow=true; W.add(wall); } }
-    if(k===0||k===span){ const arch=new THREE.Mesh(new THREE.BoxGeometry(off*2+4,2.2,1.6),dark); arch.position.set(p.x,cy+H+1,p.z); arch.rotation.y=ang; W.add(arch); }   // cave-mouth lintel
-    // wall torches that actually light the cave (point light + flickering flame)
+    if(k===0||k===span){ const arch=new THREE.Mesh(new THREE.BoxGeometry(off*2+5,2.6,2.0),dark); arch.position.set(p.x,cy+wallH+archH-0.5,p.z); arch.rotation.y=ang; arch.castShadow=true; W.add(arch); }
     if(k%3===0){ for(const s of [1,-1]){ const tx=p.x+n.x*s*(off-0.7), tz=p.z+n.z*s*(off-0.7), ty=cy+5.5;
       const bracket=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,1.0,5), new THREE.MeshStandardMaterial({color:0x3a2a1a,roughness:.9})); bracket.position.set(tx,ty-0.4,tz); W.add(bracket);
       const flame=new THREE.Mesh(new THREE.ConeGeometry(0.46,1.7,7), new THREE.MeshBasicMaterial({color:0xffc266,transparent:true,opacity:0.95})); flame.position.set(tx,ty+0.7,tz); W.add(flame);
-      const lt=new THREE.PointLight(0xffa347, 5.2, 48, 1.2); lt.position.set(tx,ty+1.4,tz); W.add(lt);
+      const lt=new THREE.PointLight(0xffa347, 5.4, 50, 1.2); lt.position.set(tx,ty+1.4,tz); W.add(lt);
       flames.push({a:flame, b:flame, ph:Math.random()*6.28}); } }
   }
 }
