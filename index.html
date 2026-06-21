@@ -2030,6 +2030,7 @@ function buildAvalanche(){
 function buildGlasmereLandmarks(){
   buildRivermeadowLandmarks();                          // frozen river + ice bridge + stilled mill + willows
   if(curTrack._bridgeXZ) buildFrozenFalls(curTrack._bridgeXZ);
+  buildIceSpires(90,11);                                // clustered ice formations flanking the frozen gorge
 }
 function buildFrozenFalls(b){
   const ice=new THREE.MeshStandardMaterial({color:0xd6e8f4, roughness:0.3, metalness:0.12, transparent:true, opacity:0.9});
@@ -2044,6 +2045,19 @@ function buildWyrmspireLandmarks(){
   if(bi<0) for(let i=0;i<N;i++){ const w=waypoints[i]; if(highmoorChasm(w.x,w.z)>10){ bi=i; break; } }
   if(bi>=0) buildGorgeBridge(bi);
   buildDustDevils();                                    // spindrift swirling over the glacier
+  buildIceSpires(150,18);                               // THE jagged ice-spire field — the glacier's identity
+}
+// a field of jagged translucent ice spires — cheap (1 instanced draw call)
+function buildIceSpires(count,maxH){
+  const positions=[];
+  for(let i=0;i<count;i++){ const ang=Math.random()*6.28, rad=70+Math.random()*440, x=Math.cos(ang)*rad, z=Math.sin(ang)*rad;
+    if(distToTrack(x,z)<HALF_W+14) continue; positions.push([x,z,0.6+Math.random()*1.5]); }
+  const C=positions.length; const g=new THREE.ConeGeometry(2.4,maxH,5); g.translate(0,maxH*0.5,0);
+  const mat=new THREE.MeshStandardMaterial({color:0xbfe2f4, roughness:.22, metalness:.08, transparent:true, opacity:0.86, flatShading:true});
+  const inst=new THREE.InstancedMesh(g,mat,C); inst.castShadow=true;
+  const d=new THREE.Object3D();
+  for(let i=0;i<C;i++){ const [x,z,sc]=positions[i]; d.position.set(x,terrainHeight(x,z),z); d.rotation.set((Math.random()-.5)*0.3,Math.random()*6,(Math.random()-.5)*0.3); d.scale.set(sc,sc*(1+Math.random()*1.2),sc); d.updateMatrix(); inst.setMatrixAt(i,d.matrix); }
+  W.add(inst);
 }
 
 buildWorld(0);   // build a backdrop for the menu
