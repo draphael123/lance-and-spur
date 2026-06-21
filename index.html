@@ -3197,6 +3197,20 @@ function updateNameplates(){
 function fmtTime(t){ const m=Math.floor(t/60), s=(t%60); return m+':'+s.toFixed(1).padStart(4,'0'); }
 function updateHUD(){
   const r=player();
+  if(battleMode){
+    const left=r.balloons?r.balloons.length:0, alive=racers.filter(x=>!x.out).length;
+    el('posNum').textContent = r.out?'OUT':('🎈'+left);
+    el('lapNum').textContent = alive+' left';
+    el('timeNum').textContent = fmtTime(raceTime);
+    el('spdNum').textContent=Math.round(r.speed*(SETTINGS.units==='mph'?1.0:1.6)); el('spdUnit').textContent=SETTINGS.units==='mph'?'MPH':'KM/H';
+    const st=Math.round(r.stamina*100); el('staminaFill').style.width=st+'%'; el('staTxt').textContent=r._winded>0?'WINDED':(r._boostLock?'RECOVER':st+'%');
+    el('healthFill').style.width=(left/BALLOONS*100)+'%'; el('hpTxt').textContent=r.out?'OUT':left+' 🎈';
+    el('healthFill').style.background='linear-gradient(90deg,#d04ad0,#ff9af0)';
+    const lc=r.lanceCD<=0?1:1-(r.lanceCD/TUNE.lanceCDt); el('lanceFill').style.width=(lc*100)+'%'; el('lanceTxt').textContent=r.lanceCD<=0?'READY':'…';
+    el('minimap').style.display=SETTINGS.minimap?'block':'none'; if(SETTINGS.minimap) drawMini();
+    el('speedlines').style.opacity=Math.min(0.5,Math.max(0,(r.speed-40)/46)); updateNameplates(); el('offtrack').style.opacity=0;
+    return;
+  }
   computePlaces();
   if(r.place!==lastPlace){ lastPlace=r.place; const pn=el('posNum'); pn.textContent=ordinal(r.place);
     pn.classList.remove('popping'); void pn.offsetWidth; pn.classList.add('popping'); }
