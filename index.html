@@ -763,11 +763,11 @@ const TRACKS=[
  { name:'Tourney Green', blurb:'Flat festival meadow — wide, fast & forgiving', roadW:26,
    ctrl:[[0,-300],[190,-240],[300,-60],[270,120],[140,270],[-60,300],[-240,220],[-320,40],[-260,-160],[-110,-280]],
    sky:{top:'#2f7bd6',mid:'#bfe2f5',bot:'#ffe9c2'}, fog:{c:'#f3e2bd',near:340,far:1120},
-   ground:0xeaf2dc, theme:'meadow', fireworks:true, height:(x,z)=>0, grandstands:[20,110,190], landmarks:buildGreenLandmarks, shortcut:true },
+   ground:0xeaf2dc, theme:'meadow', fireworks:true, caravan:128, height:(x,z)=>0, grandstands:[20,110,190], landmarks:buildGreenLandmarks, shortcut:true },
  { name:'Highland Run', blurb:'Long rolling hills, tight S-bends & a windmill', roadW:24,
    ctrl:[[0,-340],[170,-316],[240,-192],[156,-96],[300,-4],[240,144],[104,184],[168,304],[-44,324],[-192,248],[-132,104],[-304,64],[-336,-104],[-208,-236],[-92,-304]],
    sky:{top:'#3f86c8',mid:'#cfe6e0',bot:'#eef0d0'}, fog:{c:'#dde9cf',near:300,far:1040},
-   ground:0xb8c298, theme:'highland', grandstands:[16,150], gateAt:62, windmillAt:[300,300], landmarks:buildHighlandLandmarks, shortcut:true,
+   ground:0xb8c298, theme:'highland', grandstands:[16,150], gateAt:62, windmillAt:[300,300], caravan:205, landmarks:buildHighlandLandmarks, shortcut:true,
    height:(x,z)=>{ let h=Math.sin(x*0.0055+0.5)*9 + Math.cos(z*0.006-0.3)*8 + Math.sin((x*0.7-z)*0.003)*5;
      const dx=x-300,dz=z-300; h+=20*Math.exp(-(dx*dx+dz*dz)/30000);    // windmill knoll
      const vx=x+260,vz=z+140; h-=9*Math.exp(-(vx*vx+vz*vz)/45000);     // a hollow
@@ -795,7 +795,7 @@ const TRACKS=[
  { name:'Frostfair Flats', blurb:'A midwinter fair on a frozen lake — wide, fast & glass-slick ice', roadW:27,
    ctrl:[[0,-300],[190,-240],[300,-60],[270,120],[140,270],[-60,300],[-240,220],[-320,40],[-260,-160],[-110,-280]],
    sky:{top:'#9fb8d8',mid:'#d6e4ee',bot:'#eef2f4'}, fog:{c:'#dde6ec',near:280,far:980},
-   ground:0xeaf2f6, ice:true, theme:'winter', height:(x,z)=>0, grandstands:[20,110,190], landmarks:buildFrostfairLandmarks, shortcut:true },
+   ground:0xeaf2f6, ice:true, theme:'winter', caravan:128, height:(x,z)=>0, grandstands:[20,110,190], landmarks:buildFrostfairLandmarks, shortcut:true },
  { name:'Pinehollow Pass', blurb:'Snowbound pines, tight S-bends & a sweeping avalanche', roadW:24,
    ctrl:[[0,-340],[170,-316],[240,-192],[156,-96],[300,-4],[240,144],[104,184],[168,304],[-44,324],[-192,248],[-132,104],[-304,64],[-336,-104],[-208,-236],[-92,-304]],
    sky:{top:'#8aa6c8',mid:'#cddeea',bot:'#e8eef2'}, fog:{c:'#d8e2ea',near:260,far:920},
@@ -846,6 +846,7 @@ function buildWorld(idx){
   buildGround(); buildRoadMesh(); buildStartLine(); buildWall(); buildShortcutPath(); buildWallShields(); buildDeco();
   if(curTrack.landmarks) curTrack.landmarks();
   buildProps(); buildNature(); buildWater(); buildBirds(); buildBreakables(); buildMovers();
+  if(curTrack.caravan!==undefined) buildCaravan(curTrack.caravan);   // a merchant caravan crossing the track (hero hazard)
   buildGrandArches();                        // grand themed gateways you race under (every track)
   applyTimeOfDay();
 }
@@ -1343,6 +1344,30 @@ function buildMovers(){
   const cart=makeOxCart(); cart.rotation.y=Math.atan2(n.x,n.z); W.add(cart);
   const obs={type:'circle', x:p.x, z:p.z, r:3.6, slow:0.35}; obstacles.push(obs);
   movers.push({group:cart, obs, cx:p.x, cz:p.z, nx:n.x, nz:n.z, span:HALF_W-2, ph:Math.random()*6.28, sp:0.45});
+}
+
+// a merchant caravan that slowly crosses the whole track from field to field — a grand, telegraphed
+// crossing hazard (our "Kalimari train"); now that the walls are low you see it coming across the open land
+function buildCaravan(idx){
+  const p=waypoints[idx], t=tangents[idx]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
+  const winter=curTrack.theme==='winter';
+  const grp=new THREE.Group();
+  const wood=new THREE.MeshStandardMaterial({color:0x6a4624,roughness:.9,map:woodTex});
+  const canvasMat=new THREE.MeshStandardMaterial({color:winter?0xd2dde6:0xddcfa6,roughness:.92});
+  const wheelMat=new THREE.MeshStandardMaterial({color:0x3a2a1a,roughness:.85});
+  for(let w=0; w<3; w++){ const wag=new THREE.Group(); wag.position.z=w*9-9;
+    const bed=new THREE.Mesh(new THREE.BoxGeometry(3.4,1.5,5.6),wood); bed.position.y=2.5; wag.add(bed);
+    const hood=new THREE.Mesh(new THREE.CylinderGeometry(1.9,1.9,5.4,12,1,true,0,Math.PI),canvasMat); hood.rotation.z=Math.PI/2; hood.position.y=3.7; wag.add(hood);
+    for(const sx of [-1.6,1.6]) for(const sz of [-1.9,1.9]){ const wh=new THREE.Mesh(new THREE.CylinderGeometry(1.15,1.15,0.4,12),wheelMat); wh.rotation.z=Math.PI/2; wh.position.set(sx,1.15,sz); wag.add(wh); }
+    const ox=new THREE.Mesh(new THREE.CapsuleGeometry(1.0,2.3,5,9),new THREE.MeshStandardMaterial({color:winter?0x8a8276:0x6b5848,roughness:.9})); ox.rotation.x=Math.PI/2; ox.position.set(0,2.0,4.7); wag.add(ox);
+    for(const hx of [-0.5,0.5]){ const horn=new THREE.Mesh(new THREE.ConeGeometry(0.18,0.9,5),new THREE.MeshStandardMaterial({color:0xe8e0cc})); horn.position.set(hx,3.0,5.9); horn.rotation.x=-0.5; wag.add(horn); }
+    grp.add(wag);
+  }
+  grp.traverse(o=>{ if(o.isMesh)o.castShadow=true; });
+  grp.position.set(p.x,terrainHeight(p.x,p.z),p.z); grp.rotation.y=Math.atan2(n.x,n.z); W.add(grp);
+  const obs={type:'circle',x:p.x,z:p.z,r:5.5,slow:0.28}; obstacles.push(obs);
+  movers.push({group:grp, obs, cx:p.x, cz:p.z, nx:n.x, nz:n.z, span:135, ph:Math.random()*6.28, sp:0.2, crossing:true});
+  curTrack._caravanIdx=idx;
 }
 
 function buildDeco(){
@@ -3140,9 +3165,10 @@ function step(dt){
   // roaming ox-cart / sweeping avalanche slides across the lane; its collider follows it.
   // hard clamp the swing to the parapet so nothing (cart, herd, boulders) grinds through the wall
   for(const mv of movers){ let o=Math.sin(worldTime*mv.sp+mv.ph)*mv.span;
-    const lim = mv.slam ? HALF_W+WALL_INNER-1.2 : HALF_W-1.0;
-    if(o>lim) o=lim; else if(o<-lim) o=-lim;
+    if(!mv.crossing){ const lim = mv.slam ? HALF_W+WALL_INNER-1.2 : HALF_W-1.0;   // a crossing caravan travels right across the open land; everything else stays inside the parapet
+      if(o>lim) o=lim; else if(o<-lim) o=-lim; }
     const x=mv.cx+mv.nx*o, z=mv.cz+mv.nz*o; mv.obs.x=x; mv.obs.z=z; mv.group.position.set(x, terrainHeight(x,z), z);
+    if(mv.crossing){ const dir=Math.cos(worldTime*mv.sp+mv.ph)>=0?1:-1; mv.group.rotation.y=Math.atan2(mv.nx*dir,mv.nz*dir); }   // face the way it's travelling
     if(mv.roll){ mv.group.rotation.x += dt*Math.cos(worldTime*mv.sp+mv.ph)*mv.sp*mv.span*0.12; } }
   // living-level moments: fireworks over the festival, snowballs from the winter stands
   if(curTrack && state==='race'){
