@@ -1,5 +1,7 @@
 # Lance & Spur — Jousting Derby
 
+**▶ Play: https://lance-and-spur.vercel.app**
+
 A 3D medieval horse-racing game with a jousting twist: race a grass turf course on
 horseback and **couch your lance** to knock rivals out of the saddle as you pull
 alongside them. Drain a rival's health and they spin out.
