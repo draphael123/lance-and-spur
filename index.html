@@ -588,7 +588,8 @@ let curve, waypoints, tangents, N=260, ROAD_W=26, HALF_W=13;
 let curTrack=null, W=null, obstacles=[], windmills=[], crowds=[], birds=[], flames=[], swayers=[], butterflies=[], crowdSpots=[];
 let mists=[], dustDevils=[], wheelSpots=[];   // river mist, Highmoor dust devils, watermill audio emitters
 let breakables=[], movers=[], projectiles=[]; // smashable props, roaming hazards, lobbed snowballs
-let _fwT=0, _sbT=0, _catT=0, _baseExp=1.12;    // firework / snowball / catapult timers + tunnel-darkening base exposure
+let ramps=[];                                  // jump ramps (trigger zones)
+let _fwT=0, _sbT=0, _catT=0, _gateT=0, _baseExp=1.12;    // firework / snowball / catapult / boulder-gate timers + tunnel base exposure
 let worldTime=0;
 const fxShaders=[];   // compiled shaders carrying a uTime uniform (animated water + wind-swept grass)
 const _viewSun=new THREE.Vector3(), _camFwd=new THREE.Vector3();
@@ -777,7 +778,7 @@ const TRACKS=[
  { name:'Highmoor Crag', blurb:'A hard hill-climb to a clifftop fort, a fast descent & a gorge bridge', roadW:24,
    ctrl:[[0,-330],[150,-300],[280,-230],[340,-90],[300,60],[330,200],[200,310],[40,340],[-130,320],[-280,250],[-345,90],[-300,-90],[-210,-230],[-80,-320]],
    sky:{top:'#4a78b0',mid:'#cdd9dc',bot:'#e6e4cf'}, fog:{c:'#d6d8cb',near:300,far:1040},
-   ground:0xb7b3ab, theme:'crag', grandstands:[120,235], bridge:true, tunnel:[40,66], catapult:true, landmarks:buildHighmoorLandmarks,
+   ground:0xb7b3ab, theme:'crag', grandstands:[120,235], bridge:true, tunnel:[40,66], catapult:true, jump:200, gate:110, ledge:[150,166], landmarks:buildHighmoorLandmarks,
    height:(x,z)=>{ let h=Math.sin(x*0.006+0.4)*7 + Math.cos(z*0.0065-0.2)*6;
      const cx=x-300,cz=z+285; h+=70*Math.exp(-(cx*cx+cz*cz)/82000);    // the crag (clifftop fort)
      const rx=x+300,rz=z-150; h+=30*Math.exp(-(rx*rx+rz*rz)/60000);    // outer ridge
@@ -823,7 +824,7 @@ function disposeObj(o){ o.traverse(n=>{ if(n.geometry)n.geometry.dispose();
 
 function buildWorld(idx){
   if(W){ scene.remove(W); disposeObj(W); }
-  W=new THREE.Group(); scene.add(W); obstacles=[]; windmills=[]; crowds=[]; birds=[]; flames=[]; swayers=[]; butterflies=[]; crowdSpots=[]; mists=[]; dustDevils=[]; wheelSpots=[]; breakables=[]; movers=[]; projectiles=[]; fxShaders.length=0;
+  W=new THREE.Group(); scene.add(W); obstacles=[]; windmills=[]; crowds=[]; birds=[]; flames=[]; swayers=[]; butterflies=[]; crowdSpots=[]; mists=[]; dustDevils=[]; wheelSpots=[]; breakables=[]; movers=[]; projectiles=[]; ramps=[]; fxShaders.length=0;
   curTrack=TRACKS[idx]; ROAD_W=curTrack.roadW; HALF_W=ROAD_W/2; N=260;
   skyMat.uniforms.top.value.set(curTrack.sky.top); skyMat.uniforms.mid.value.set(curTrack.sky.mid); skyMat.uniforms.bot.value.set(curTrack.sky.bot);
   scene.fog.color.set(curTrack.fog.c); scene.fog.near=curTrack.fog.near; scene.fog.far=curTrack.fog.far;
@@ -995,6 +996,9 @@ function buildWall(){
   function inGap(px,pz,ix,iz,u){ if(!sc) return false; const wi=Math.round(u*N)%N;
     if(((wi-sc.a+N)%N) > ((sc.b-sc.a+N)%N)) return false;
     return dist2D(ix,iz,sc.mx,sc.mz) < dist2D(px,pz,sc.mx,sc.mz); }
+  // the wall-less ledge: drop the parapet entirely over this stretch (both sides)
+  const lg=curTrack.ledge;
+  function inLedge(u){ if(!lg) return false; const wi=Math.round(u*N)%N; return ((wi-lg[0]+N)%N) <= ((lg[1]-lg[0]+N)%N); }
   for(const sgn of [1,-1]){
     const pos=[],uv=[],idx=[],skip=[];
     for(let i=0;i<=segs;i++){ const u=(i%segs)/segs; const p=curve.getPointAt(u);
@@ -1003,7 +1007,7 @@ function buildWall(){
       const iyb=terrainHeight(ix,iz), oyb=terrainHeight(ox,oz);
       pos.push(ix,iyb,iz, ix,iyb+H,iz, ox,oyb+H,oz, ox,oyb,oz);   // innerB, innerT, outerT, outerB
       const v=i*0.35; uv.push(0,v, 0,v+0.5, 1,v+0.5, 1,v);
-      skip[i]=inGap(p.x,p.z,ix,iz,u);
+      skip[i]=inGap(p.x,p.z,ix,iz,u) || inLedge(u);
     }
     for(let i=0;i<segs;i++){ if(skip[i]||skip[i+1]) continue; const b=i*4;
       idx.push(b,b+1,b+5, b,b+5,b+4);        // inner face
@@ -1017,7 +1021,7 @@ function buildWall(){
     // stone crenellation teeth (merlons) sitting flush on the wall top, regularly spaced with gaps
     const merlonGeo=new THREE.BoxGeometry(2.0,1.6,T); merlonGeo.translate(0,0.8,0);   // base at wall top
     for(let i=0;i<N;i+=5){ const p=waypoints[i], tn=tangents[i]; const n=new THREE.Vector3(-tn.z,0,tn.x).normalize().multiplyScalar(sgn);
-      if(inGap(p.x,p.z,p.x+n.x*OFF,p.z+n.z*OFF,i/N)) continue;
+      if(inGap(p.x,p.z,p.x+n.x*OFF,p.z+n.z*OFF,i/N) || inLedge(i/N)) continue;
       const mx=p.x+n.x*(OFF+T*0.5), mz=p.z+n.z*(OFF+T*0.5);
       const mer=new THREE.Mesh(merlonGeo, stoneMat); mer.position.set(mx, terrainHeight(mx,mz)+H, mz);
       mer.rotation.y=Math.atan2(tn.x,tn.z); mer.castShadow=true; W.add(mer);
@@ -1028,7 +1032,7 @@ function buildWall(){
     const buntMats=BUNT_COLS.map(c=>new THREE.MeshStandardMaterial({color:c, side:THREE.DoubleSide, roughness:.7}));
     let fc=0;
     for(let i=2;i<N;i+=5){ const p=waypoints[i], tn=tangents[i]; const n=new THREE.Vector3(-tn.z,0,tn.x).normalize().multiplyScalar(sgn);
-      if(inGap(p.x,p.z,p.x+n.x*OFF,p.z+n.z*OFF,i/N)) continue;
+      if(inGap(p.x,p.z,p.x+n.x*OFF,p.z+n.z*OFF,i/N) || inLedge(i/N)) continue;
       const fx=p.x+n.x*OFF, fz=p.z+n.z*OFF; const fl=new THREE.Mesh(flagGeo,buntMats[(fc++)%buntMats.length]);
       fl.position.set(fx, terrainHeight(fx,fz)+H-0.3, fz); fl.lookAt(fx-n.x, terrainHeight(fx,fz)+H-0.3, fz-n.z); W.add(fl);
     }
@@ -1646,6 +1650,9 @@ function buildHighmoorLandmarks(){
   buildRockfall();
   if(curTrack.tunnel) buildTunnel(curTrack.tunnel[0], curTrack.tunnel[1]);   // a cave bored through the crag
   if(curTrack.catapult) buildCatapult(300,-285);                              // on the fort knoll
+  if(curTrack.jump!==undefined) buildRamp(curTrack.jump);                     // a turf launch ramp — big air
+  if(curTrack.gate!==undefined) buildBoulderGate(curTrack.gate);             // a timed boulder dead-drop
+  if(curTrack.ledge) buildLedgeMarkers(curTrack.ledge);                       // pennants flagging the wall-less ledge
   buildEagles();
 }
 // a cave/tunnel you drive THROUGH: stone walls + ceiling over the lane, lit by torches
@@ -1691,6 +1698,44 @@ function buildEagles(){
   for(let i=0;i<3;i++){ const s=new THREE.Sprite(new THREE.SpriteMaterial({map:birdTex,transparent:true,depthWrite:false,color:0x2a2620}));
     s.scale.setScalar(11+Math.random()*5); W.add(s);
     birds.push({s, cx:(Math.random()-.5)*200, cz:(Math.random()-.5)*200, rad:90+Math.random()*120, h:55+Math.random()*40, ph:Math.random()*6.28, sp:0.13+Math.random()*0.1}); }
+}
+// a turf launch ramp — hit it square-on with speed and you fly (air physics in integrate)
+function buildRamp(idx){
+  const p=waypoints[idx], t=tangents[idx]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
+  const ang=Math.atan2(t.x,t.z), y=terrainHeight(p.x,p.z), W2=HALF_W*1.5, L=11;
+  const ramp=new THREE.Mesh(new THREE.BoxGeometry(W2,2.6,L), new THREE.MeshStandardMaterial({color:0x6a5536,roughness:.95,map:woodTex}));
+  ramp.position.set(p.x,y+0.5,p.z); ramp.rotation.set(-0.34,ang,0); ramp.castShadow=true; ramp.receiveShadow=true; W.add(ramp);
+  // striped marker posts either side of the lip
+  for(const s of [1,-1]){ const px=p.x+n.x*s*(W2*0.5+0.7), pz=p.z+n.z*s*(W2*0.5+0.7);
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,4.5,6), new THREE.MeshStandardMaterial({color:0xcc3322,roughness:.7}));
+    post.position.set(px,terrainHeight(px,pz)+2.2,pz); post.castShadow=true; W.add(post); }
+  ramps.push({x:p.x, z:p.z, r:W2*0.5+2.5, tx:t.x, tz:t.z, minSpeed:24, launch:12});
+}
+// a timed boulder dead-drop slung above the lane — a gate you have to time your run through
+function buildBoulderGate(idx){
+  const p=waypoints[idx], t=tangents[idx]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
+  const ang=Math.atan2(t.x,t.z), y=terrainHeight(p.x,p.z), H=12, span=HALF_W+WALL_INNER+0.6;
+  const beamMat=new THREE.MeshStandardMaterial({color:0x46361f,roughness:.92,map:woodTex});
+  for(const s of [1,-1]){ const px=p.x+n.x*s*span, pz=p.z+n.z*s*span;
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.7,H,7), beamMat); post.position.set(px,terrainHeight(px,pz)+H/2,pz); post.castShadow=true; W.add(post); }
+  const beam=new THREE.Mesh(new THREE.BoxGeometry(span*2,1.2,1.2), beamMat); beam.position.set(p.x,y+H,p.z); beam.rotation.y=ang; beam.castShadow=true; W.add(beam);
+  // the loaded boulder hanging from the beam (the next one to drop)
+  const boulder=new THREE.Mesh(new THREE.DodecahedronGeometry(1.6,0), new THREE.MeshStandardMaterial({color:0x7a756c,roughness:1,flatShading:true}));
+  boulder.position.set(p.x,y+H-1.8,p.z); boulder.castShadow=true; W.add(boulder);
+  curTrack._gatePos={x:p.x, z:p.z, top:y+H-1.8, boulder};
+}
+// pennants flagging the wall-less ledge — they stream so you can read the crosswind
+function buildLedgeMarkers(lg){
+  const a=lg[0], span=((lg[1]-a)%N+N)%N;
+  for(let k=0;k<=span;k+=3){ const i=(a+k)%N, p=waypoints[i], t=tangents[i]; const n=new THREE.Vector3(-t.z,0,t.x).normalize();
+    const ang=Math.atan2(t.x,t.z);
+    const px=p.x+n.x*(HALF_W+WALL_INNER), pz=p.z+n.z*(HALF_W+WALL_INNER), y=terrainHeight(px,pz);
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,5,6), new THREE.MeshStandardMaterial({color:0x4a3a28,roughness:.9}));
+    post.position.set(px,y+2.5,pz); post.castShadow=true; W.add(post);
+    const piv=new THREE.Group(); piv.position.set(px,y+4.4,pz); W.add(piv);
+    const flag=new THREE.Mesh(new THREE.PlaneGeometry(2.4,1.0), new THREE.MeshStandardMaterial({color:k%6<3?0xcc4433:0xe8c84a, side:THREE.DoubleSide, roughness:.8}));
+    flag.position.set(1.2,0,0); flag.rotation.y=Math.PI/2; piv.add(flag);
+    swayers.push({node:piv, axis:'y', base:ang, amp:0.55, ph:Math.random()*6.28}); }
 }
 // a clutch of boulders that tumbles across the descent — time your run
 function buildRockfall(){
@@ -2487,7 +2532,7 @@ function updateRacer(r,dt){
   r.speed -= r.speed*(onGrass?TUNE.grassDrag:TUNE.drag)*iceDrag*(1-r._draft*0.5)*dt;
   // slope: uphill saps speed, downhill feeds it
   const fwx=Math.sin(r.heading), fwz=Math.cos(r.heading);
-  const slope=(terrainHeight(r.pos.x+fwx*3, r.pos.z+fwz*3) - r.pos.y)/3;
+  const slope=r.airborne?0:(terrainHeight(r.pos.x+fwx*3, r.pos.z+fwz*3) - r.pos.y)/3;
   r.speed -= slope*TUNE.slopeForce*dt;
   if(r._winded>0) r.speed -= r.speed*1.4*dt;                                          // the stumble when you over-spur
   r.speed=Math.max(0,r.speed);
@@ -2526,13 +2571,27 @@ function updateRacer(r,dt){
   // knockback impulse
   if(r._knockMag>0){ const k=Math.min(r._knockMag, r._knockMag*dt*8); r.pos.addScaledVector(r._knockDir,k); r._knockMag-=k; if(r._knockMag<0.4)r._knockMag=0; }
 
+  // launch ramps — hit one square-on with speed and you take to the air
+  if(!r.airborne && ramps.length){ for(const rp of ramps){
+    if(dist2D(r.pos.x,r.pos.z,rp.x,rp.z)<rp.r && r.speed>rp.minSpeed){
+      const fwd=Math.sin(r.heading)*rp.tx+Math.cos(r.heading)*rp.tz;   // aligned with the ramp?
+      if(fwd>0.3){ r.airborne=true; r.vy=rp.launch*(0.7+0.3*Math.min(1,r.speed/TUNE.maxSpeed));
+        if(r.isPlayer){ toast('🪽 Big air!'); Audio.boostWhoosh&&Audio.boostWhoosh(); shake=Math.max(shake,0.2); } } } } }
+
   integrate(r,dt);
 
   // solid stone wall — clamp to its inner face and slide along it (truly impassable)
   const niw=nearestIndex(r.pos,r.wp);
   const wd=dist2D(r.pos.x,r.pos.z, waypoints[niw].x, waypoints[niw].z);
   const LIMIT=HALF_W+WALL_INNER-RIDER_RAD;
-  if(wd>LIMIT && !onShortcut(r.pos.x,r.pos.z)){   // the shortcut breaches the wall — don't yank riders back onto it there
+  const onLedge = !!curTrack.ledge && ((niw-curTrack.ledge[0]+N)%N) <= ((curTrack.ledge[1]-curTrack.ledge[0]+N)%N);
+  if(onLedge && !r.airborne){
+    // exposed clifftop ledge: no wall here — a pulsing crosswind shoves you toward the drop (brace to hold your line)
+    const tt=tangents[niw], gust=0.5+0.5*Math.sin(worldTime*0.7+niw*0.3);
+    const push=(5+gust*11)*windMul()*(r.bracing?0.35:1);
+    r.pos.x += (-tt.z)*push*dt; r.pos.z += (tt.x)*push*dt;
+    if(wd>HALF_W+6) respawn(r);                       // tumbled off the ledge — hauled back onto the track
+  } else if(wd>LIMIT && !onShortcut(r.pos.x,r.pos.z)){   // the shortcut breaches the wall — don't yank riders back onto it there
     const nx=(r.pos.x-waypoints[niw].x)/(wd||1), nz=(r.pos.z-waypoints[niw].z)/(wd||1);
     r.pos.x=waypoints[niw].x + nx*LIMIT; r.pos.z=waypoints[niw].z + nz*LIMIT;
     slideOff(r,nx,nz);
@@ -2550,7 +2609,7 @@ function updateRacer(r,dt){
     if(dist2D(r.pos.x,r.pos.z,bk.x,bk.z)<bk.r){ bk.broken=true; bk.group.visible=false; r.speed*=0.82;
       for(let q=0;q<3;q++) Particles.spawnBurst(bk.x+(Math.random()-.5)*2, r.pos.y+1.4, bk.z+(Math.random()-.5)*2, 0xd9b84a, r.pos.y);
       if(dist2D(r.pos.x,r.pos.z,player().pos.x,player().pos.z)<45) Audio.sfx.crash(); } }
-  r.pos.y=terrainHeight(r.pos.x,r.pos.z);
+  if(!r.airborne) r.pos.y=terrainHeight(r.pos.x,r.pos.z);
 
   // lap / progress tracking — gated by a halfway checkpoint so jitter at the
   // start line (or spawning just behind it) can't rack up phantom laps.
@@ -2571,7 +2630,22 @@ function updateRacer(r,dt){
 function integrate(r,dt){
   const fwx=Math.sin(r.heading), fwz=Math.cos(r.heading);
   r.pos.x+=fwx*r.speed*dt; r.pos.z+=fwz*r.speed*dt;
-  r.pos.y=terrainHeight(r.pos.x, r.pos.z);
+  if(r.airborne){                                           // off a ramp — arc through the air under gravity
+    r.vy-=26*dt; r.pos.y+=r.vy*dt;
+    const g=terrainHeight(r.pos.x,r.pos.z);
+    if(r.pos.y<=g){ r.pos.y=g; r.airborne=false; r.vy=0;    // touchdown
+      Particles.spawnBurst&&Particles.spawnBurst(r.pos.x,g+0.3,r.pos.z,0xbdae92,g);
+      if(r.isPlayer){ shake=Math.max(shake,0.32); Audio.sfx.crash&&Audio.sfx.crash(); } }
+  } else { r.pos.y=terrainHeight(r.pos.x, r.pos.z); }
+}
+
+// hauled back onto the racing line (off the ledge / out of the gorge) with a stagger + a speed bleed
+function respawn(r){
+  const ni=nearestIndex(r.pos,r.wp); const p=waypoints[ni], t=tangents[ni];
+  r.pos.x=p.x; r.pos.z=p.z; r.pos.y=terrainHeight(p.x,p.z);
+  r.heading=Math.atan2(t.x,t.z); r.speed*=0.25; r.airborne=false; r.vy=0;
+  r.stun=Math.max(r.stun,0.5);
+  if(r.isPlayer){ toast('🪶 Off the ledge!'); shake=Math.max(shake,0.4); }
 }
 
 function finishRacer(r){
@@ -2937,6 +3011,13 @@ function step(dt){
       const cs=crowdSpots[(Math.random()*crowdSpots.length)|0]; lobSnowball(cs.x,cs.z); } }
     if(curTrack.catapult && curTrack._catPos){ _catT-=dt; if(_catT<=0){ _catT=2.6+Math.random()*1.8;
       const c=curTrack._catPos; if(c.arm) c.arm.rotation.x=-1.4; lobRock(c.x,c.z); } }
+    // the boulder gate releases its slung rock straight down on a cycle — time your dash through
+    if(curTrack.gate!==undefined && curTrack._gatePos){ _gateT-=dt; if(_gateT<=0){ _gateT=3.0+Math.random()*1.8;
+      const g=curTrack._gatePos;
+      const mesh=new THREE.Mesh(new THREE.DodecahedronGeometry(1.5,0), new THREE.MeshStandardMaterial({color:0x6f6a61,roughness:1,flatShading:true}));
+      mesh.position.set(g.x,g.top,g.z); mesh.castShadow=true; W.add(mesh);
+      projectiles.push({mesh, vx:0, vy:0, vz:0, x:g.x, y:g.top, z:g.z, kind:'rock'});
+      if(g.boulder) g.boulder.visible=true; Audio.sfx.crash&&Audio.sfx.crash(); } }
   }
   if(curTrack && curTrack._catPos && curTrack._catPos.arm){ const arm=curTrack._catPos.arm; arm.rotation.x += (-0.7-arm.rotation.x)*Math.min(1,dt*3); }   // arm recoils back
   // projectile flight + impact (snowball = light; catapult boulder = a heavy hit)
