@@ -277,6 +277,25 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 const rbox=(w,h,d,r)=>new RoundedBoxGeometry(w,h,d,2,r!==undefined?r:Math.min(w,h,d)*0.18);
 
+// ---- game settings (declared first so all load-time setup can read them) ----
+const SETTINGS={
+  master:0.8, music:0.55, sfx:0.9, ambience:0.85,
+  shake:1.0,                                   // 0..1 camera-shake intensity (0 = off)
+  minimap:true, nameplates:true,
+  quality:'high', renderScale:1.0, bloom:0.42, ssao:false, aa:'msaa',   // aa: msaa | smaa | off
+  timeOfDay:'day', weather:'clear', wind:'breezy',
+  difficulty:'normal', laps:3, rivals:4,
+  fov:62, units:'kmh', fps:false, hudScale:1.0,
+  reduceMotion:false, photosensitive:false, colorblind:false,
+  toggleSpur:false, toggleBrace:false, steer:1.0, decals:true,
+};
+// persistence: settings + best times survive between sessions
+function loadSettings(){ try{ Object.assign(SETTINGS, JSON.parse(localStorage.getItem('lns_settings')||'{}')); }catch(e){} }
+function saveSettings(){ try{ localStorage.setItem('lns_settings', JSON.stringify(SETTINGS)); }catch(e){} }
+let bestTimes={}; try{ bestTimes=JSON.parse(localStorage.getItem('lns_best')||'{}'); }catch(e){}
+function recordBest(trackIdx,t){ const k=String(trackIdx); if(t>0 && (!bestTimes[k]||t<bestTimes[k])){ bestTimes[k]=t; try{localStorage.setItem('lns_best',JSON.stringify(bestTimes));}catch(e){} return true; } return false; }
+loadSettings();
+
 // ===================================================================
 //  RENDERER / SCENE
 // ===================================================================
@@ -530,24 +549,8 @@ function roadTexture(){
 }
 const grassTex=grassTexture(), roadTex=roadTexture();
 const BUNT_COLS=[0xe23b2e,0x2f7fd0,0x37b85e,0xe0b21f,0x9a3bd0,0xee7722];
-// game settings (declared early so load-time buildWorld(0) can read them)
-const SETTINGS={
-  master:0.8, music:0.55, sfx:0.9, ambience:0.85,
-  shake:1.0,                                   // 0..1 camera-shake intensity (0 = off)
-  minimap:true, nameplates:true,
-  quality:'high', renderScale:1.0, bloom:0.42, ssao:false, aa:'msaa',   // aa: msaa | smaa | off
-  timeOfDay:'day', weather:'clear', wind:'breezy',
-  difficulty:'normal', laps:3, rivals:4,
-  fov:62, units:'kmh', fps:false, hudScale:1.0,
-  reduceMotion:false, photosensitive:false, colorblind:false,
-  toggleSpur:false, toggleBrace:false, steer:1.0, decals:true,
-};
-// persistence: settings + best times survive between sessions
-function loadSettings(){ try{ Object.assign(SETTINGS, JSON.parse(localStorage.getItem('lns_settings')||'{}')); }catch(e){} }
-function saveSettings(){ try{ localStorage.setItem('lns_settings', JSON.stringify(SETTINGS)); }catch(e){} }
-let bestTimes={}; try{ bestTimes=JSON.parse(localStorage.getItem('lns_best')||'{}'); }catch(e){}
-function recordBest(trackIdx,t){ const k=String(trackIdx); if(t>0 && (!bestTimes[k]||t<bestTimes[k])){ bestTimes[k]=t; try{localStorage.setItem('lns_best',JSON.stringify(bestTimes));}catch(e){} return true; } return false; }
-loadSettings();
+// game settings live near the top of the module (see after the imports)
+
 
 // ---------- per-track state (reassigned by buildWorld) ----------
 let curve, waypoints, tangents, N=260, ROAD_W=26, HALF_W=13;
