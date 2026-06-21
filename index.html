@@ -83,6 +83,13 @@
   .setVal { display:inline-block; min-width:38px; text-align:right; color:#ffd87a; font-variant-numeric:tabular-nums; }
   #finish .row { display:flex; gap:8px; font-size:18px; margin:3px 0; }
   #finish .row b { color:#ffd87a; min-width:30px; text-align:right; }
+  #finishRound { font-size:15px; letter-spacing:3px; color:#ffd87a; opacity:.85; margin-bottom:2px; text-transform:uppercase; }
+  #gpStandings { margin:10px auto 2px; max-width:360px; }
+  #gpStandings .gpHead { font-size:13px; letter-spacing:2px; opacity:.7; margin-bottom:6px; }
+  #gpStandings .gpRow { display:flex; justify-content:space-between; gap:10px; font-size:17px; margin:2px 0; padding:2px 8px; border-radius:6px; }
+  #gpStandings .gpRow.you { background:rgba(255,216,122,.14); }
+  #gpStandings .gpRow .pts { color:#ffd87a; font-weight:bold; }
+  .modeCard { width:230px; }
   .hidden { display:none !important; }
 
   /* ---------- art-directed polish ---------- */
@@ -163,6 +170,10 @@
     <div><b>⇧</b>Spur (boost, drains stamina)</div>
     <div><b>B</b>Brace · tap to time a parry</div>
   </div>
+  <div class="trackSel" id="modeSel" style="margin-bottom:2px">
+    <div class="trackCard modeCard selected" data-mode="single"><div class="tname">Single Race</div><div class="tblurb">One race on the track you choose</div></div>
+    <div class="trackCard modeCard" data-mode="gp"><div class="tname">Grand Prix</div><div class="tblurb">All four tracks · a points championship</div></div>
+  </div>
   <div class="trackSel" id="trackSel">
     <div class="trackCard selected" data-track="0"><div class="tname">Tourney Green</div><div class="tblurb">Flat festival meadow — wide, fast &amp; forgiving</div></div>
     <div class="trackCard" data-track="1"><div class="tname">Highland Run</div><div class="tblurb">Long rolling hills, tight S-bends &amp; a windmill</div></div>
@@ -192,9 +203,11 @@
 </div>
 
 <div class="screen hidden" id="finish">
+  <div id="finishRound"></div>
   <h1 id="finishTitle">VICTORY</h1>
   <div id="podium"></div>
   <div id="finishBoard"></div>
+  <div id="gpStandings"></div>
   <p id="finishSub"></p>
   <button class="btn" id="againBtn">RIDE AGAIN</button>
 </div>
@@ -1694,6 +1707,8 @@ const TUNE = {
 };
 let state='menu', raceTime=0, countdown=0, results=[];
 let selectedTrack=0;
+let raceMode='single';                                   // 'single' | 'gp'
+let gpActive=false, gpRound=0, gpOrder=[0,1,2,3], gpPoints=[];   // Grand Prix championship state
 const player=()=>racers[0];
 
 // ===================================================================
@@ -2352,6 +2367,8 @@ function endRace(){
   const board=[];
   for(const r of order){ place++; board.push({name:r.team.name, place:r.isPlayer?player().place:place, you:r.isPlayer,
     time: r.finished? fmtTime(r.finishTime) : '—'}); }
+  // Grand Prix: award points by finishing order (1st gets NUM, last gets 1)
+  if(gpActive) order.forEach((r,i)=>{ gpPoints[r.idx]=(gpPoints[r.idx]||0)+(NUM-i); });
   // recompute player's place precisely
   const p=player();
   setTimeout(()=>{
@@ -2372,6 +2389,22 @@ function endRace(){
     let html=''; ord.slice(3).forEach((r,i)=>{ html+=`<div class="row"><b>${ordinal(i+4)}</b><span style="color:#${r.team.c.toString(16).padStart(6,'0')}">${r.isPlayer?'★ ':''}${r.team.name}</span></div>`; });
     el('finishBoard').innerHTML=html;
     el('finishSub').textContent = `You finished ${ordinal(p.place)} of ${NUM} · ${p._hits||0} lance hits · ${p._spins||0} spun out · ${fmtTime(p.finishTime||raceTime)}`;
+    // Grand Prix overlay: round indicator, cumulative standings, dynamic button
+    const round=el('finishRound'), gpEl=el('gpStandings');
+    if(gpActive){
+      round.textContent = `Round ${gpRound+1} of ${gpOrder.length} · ${TRACKS[selectedTrack].name}`;
+      const standings=racers.map(r=>({c:r.team.c, name:r.team.name, you:r.isPlayer, pts:gpPoints[r.idx]||0})).sort((a,b)=>b.pts-a.pts);
+      let sh='<div class="gpHead">CHAMPIONSHIP STANDINGS</div>';
+      standings.forEach((s,i)=>{ sh+=`<div class="gpRow${s.you?' you':''}"><span>${i+1}. ${s.you?'★ ':''}<span style="color:#${s.c.toString(16).padStart(6,'0')}">${s.name}</span></span><span class="pts">${s.pts}</span></div>`; });
+      gpEl.innerHTML=sh; gpEl.style.display='';
+      const last = gpRound===gpOrder.length-1;
+      if(last){ const champ=standings[0];
+        el('finishTitle').textContent = champ.you?'CHAMPION!':champ.name.toUpperCase()+' WINS';
+        el('finishTitle').style.color = champ.you?'#ffd87a':'#cdb38a';
+        if(champ.you) Audio.sfx.fanfare();
+        el('againBtn').textContent='BACK TO MENU';
+      } else el('againBtn').textContent='NEXT RACE →';
+    } else { round.textContent=''; gpEl.style.display='none'; gpEl.innerHTML=''; el('againBtn').textContent='RIDE AGAIN'; }
     el('finish').classList.remove('hidden');
   }, 700);
 }
@@ -2467,17 +2500,32 @@ function syncSettingsUI(){
   el('setQual').value=SETTINGS.quality; el('setDiff').value=SETTINGS.difficulty; el('setTime').value=SETTINGS.timeOfDay;
 }
 
-el('startBtn').onclick=()=>{ Audio.resume(); startRace(); };
-el('againBtn').onclick=()=>{ el('finish').classList.add('hidden'); startRace(); };
+el('startBtn').onclick=()=>{ Audio.resume(); if(raceMode==='gp') startGrandPrix(); else startRace(); };
+el('againBtn').onclick=()=>handleAgain();
 el('settingsBtn').onclick=()=>openSettings('start');
 el('setBack').onclick=closeSettings;
 
-// track selector
-document.querySelectorAll('.trackCard').forEach(card=>card.onclick=()=>{
+// mode selector (single race vs grand prix)
+document.querySelectorAll('#modeSel .modeCard').forEach(card=>card.onclick=()=>{
+  raceMode=card.dataset.mode;
+  document.querySelectorAll('#modeSel .modeCard').forEach(c=>c.classList.toggle('selected', c===card));
+  el('trackSel').style.display = raceMode==='gp' ? 'none' : '';
+});
+
+// track selector (single-race only)
+document.querySelectorAll('#trackSel .trackCard').forEach(card=>card.onclick=()=>{
   selectedTrack=+card.dataset.track;
-  document.querySelectorAll('.trackCard').forEach(c=>c.classList.toggle('selected', c===card));
+  document.querySelectorAll('#trackSel .trackCard').forEach(c=>c.classList.toggle('selected', c===card));
   buildWorld(selectedTrack);   // refresh the menu backdrop to the chosen track
 });
+
+function startGrandPrix(){ gpActive=true; gpRound=0; gpPoints=new Array(NUM).fill(0); selectedTrack=gpOrder[0]; startRace(); }
+function handleAgain(){ el('finish').classList.add('hidden');
+  if(!gpActive){ startRace(); return; }
+  if(gpRound < gpOrder.length-1){ gpRound++; selectedTrack=gpOrder[gpRound]; startRace(); }
+  else { gpActive=false; backToMenu(); }
+}
+function backToMenu(){ state='menu'; el('hud').classList.add('hidden'); el('finish').classList.add('hidden'); el('start').classList.remove('hidden'); buildWorld(selectedTrack); }
 
 // settings inputs
 el('setMaster').oninput=e=>{ SETTINGS.master=e.target.value/100; el('valMaster').textContent=e.target.value; Audio.resume(); Audio.applyVolumes(); };
