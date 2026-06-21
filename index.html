@@ -2504,7 +2504,7 @@ const Audio = (()=>{
 // =============================================================
 //  BATTLE MODE — balloon-battle in an enclosed tournament arena
 // =============================================================
-const ARENA_R=118;
+const ARENA_R=78;   // a tight arena so knights stay locked in combat instead of dispersing
 function buildArenaWorld(){
   if(W){ scene.remove(W); disposeObj(W); }
   W=new THREE.Group(); scene.add(W); obstacles=[]; windmills=[]; crowds=[]; birds=[]; flames=[]; swayers=[]; butterflies=[]; crowdSpots=[]; mists=[]; dustDevils=[]; wheelSpots=[]; breakables=[]; movers=[]; projectiles=[]; ramps=[]; flocks=[]; fxShaders.length=0;
@@ -2885,7 +2885,7 @@ function updateRacer(r,dt){
 
   // speed dynamics — ice keeps your momentum but robs grip (weak accel/brake, low drag = slide)
   const iceGrip=onIce?0.5:1, iceDrag=onIce?0.45:1, iceAccel=onIce?0.82:1, iceBrake=onIce?0.4:1;
-  const maxV = (onGrass?TUNE.grassMax : (boosting?TUNE.boostMax:TUNE.maxSpeed)) * (r.bracing?0.7:1) * catchMul * (1+r._draft*0.16);
+  const maxV = (onGrass?TUNE.grassMax : (boosting?TUNE.boostMax:TUNE.maxSpeed)) * (r.bracing?0.7:1) * catchMul * (1+r._draft*0.16) * (curTrack.arena?0.62:1);   // nimbler in the arena
   if(thr>0) r.speed += TUNE.accel*thr*dt*(boosting?1.5:1)*catchMul*iceAccel;
   else if(thr<0) r.speed += (r.speed>0? -TUNE.brake*iceBrake : -TUNE.accel)*Math.abs(thr)*dt;
   if(r._draft>0) r.speed += r._draft*TUNE.accel*0.4*dt;                               // slingshot pull in the wake
