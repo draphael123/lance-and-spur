@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Evermoor Glade — a cozy fantasy life-sim (prototype)</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#0b0d12;
+    font-family:'Trebuchet MS','Segoe UI',sans-serif; color:#f4ead3; user-select:none; -webkit-user-select:none; touch-action:none; }
+  #game { position:fixed; inset:0; }
+  canvas { display:block; }
+
+  /* ---------- HUD ---------- */
+  #hud { position:fixed; inset:0; pointer-events:none; z-index:10; }
+  .panel { position:absolute; background:linear-gradient(180deg,rgba(24,30,22,.80),rgba(14,20,14,.86));
+           border:2px solid #4d6b3a; border-radius:12px; padding:8px 12px;
+           box-shadow:0 4px 18px rgba(0,0,0,.45), inset 0 1px 0 rgba(200,255,180,.14); }
+
+  #clock { top:14px; left:14px; text-align:center; min-width:120px; }
+  #clock .big { font-size:26px; font-weight:bold; line-height:1; color:#ffe9a8; text-shadow:0 2px 0 #33471f; font-variant-numeric:tabular-nums; }
+  #clock .sub { font-size:11px; letter-spacing:2px; opacity:.85; margin-top:2px; }
+
+  #title { top:14px; left:50%; transform:translateX(-50%); text-align:center; }
+  #title .big { font-size:18px; font-weight:bold; color:#eaffcf; letter-spacing:1px; }
+  #title .sub { font-size:10px; letter-spacing:3px; opacity:.7; }
+
+  /* inventory hotbar */
+  #hotbar { bottom:16px; left:50%; transform:translateX(-50%); display:flex; gap:8px; padding:8px; }
+  .slot { width:58px; height:58px; border-radius:10px; background:rgba(0,0,0,.35);
+          border:2px solid rgba(255,255,255,.16); position:relative; display:flex; align-items:center; justify-content:center;
+          font-size:30px; transition:transform .1s, border-color .1s, background .1s; }
+  .slot.active { border-color:#ffe08a; background:rgba(255,224,138,.16); transform:translateY(-4px); box-shadow:0 6px 14px rgba(0,0,0,.4); }
+  .slot .key { position:absolute; top:-9px; left:-6px; font-size:11px; background:#33471f; border:1px solid #6b8f4a;
+               border-radius:5px; padding:0 4px; color:#eaffcf; }
+  .slot .count { position:absolute; bottom:2px; right:4px; font-size:12px; font-weight:bold; color:#fff;
+               text-shadow:0 1px 2px #000; }
+  .slot .name { position:absolute; bottom:-16px; left:0; right:0; text-align:center; font-size:9px; letter-spacing:.5px; opacity:.75; white-space:nowrap; }
+
+  /* interaction prompt */
+  #prompt { bottom:120px; left:50%; transform:translateX(-50%); text-align:center; font-size:15px;
+            display:none; padding:8px 16px; }
+  #prompt b { color:#ffe08a; }
+
+  /* dialogue box */
+  #dialogue { display:none; bottom:16px; left:50%; transform:translateX(-50%); width:min(560px,92vw);
+              padding:16px 20px; pointer-events:auto; }
+  #dialogue .who { font-size:14px; font-weight:bold; color:#ffe08a; letter-spacing:1px; margin-bottom:4px; }
+  #dialogue .line { font-size:16px; line-height:1.4; min-height:44px; }
+  #dialogue .hint { font-size:11px; opacity:.65; text-align:right; margin-top:6px; }
+
+  /* toast */
+  #toast { top:64px; left:50%; transform:translateX(-50%); font-size:14px; padding:6px 14px; opacity:0;
+           transition:opacity .3s; }
+  #toast.show { opacity:1; }
+
+  /* help */
+  #help { bottom:16px; right:14px; font-size:11px; line-height:1.7; opacity:.9; max-width:230px; }
+  #help b { color:#ffe08a; }
+  #help .row { display:flex; justify-content:space-between; gap:12px; }
+  kbd { background:#33471f; border:1px solid #6b8f4a; border-radius:4px; padding:0 5px; font-size:10px; color:#eaffcf; }
+
+  /* placement ghost banner */
+  #placeMode { top:64px; left:14px; font-size:12px; color:#ffe08a; display:none; }
+
+  /* start overlay */
+  #start { position:fixed; inset:0; z-index:50; display:flex; flex-direction:column; align-items:center; justify-content:center;
+           background:radial-gradient(circle at 50% 35%, #2a3d22, #0c130a); text-align:center; padding:24px; }
+  #start h1 { font-size:44px; color:#eaffcf; letter-spacing:2px; text-shadow:0 3px 0 #1c2a12, 0 0 30px rgba(150,255,120,.3); }
+  #start .tag { font-size:14px; letter-spacing:4px; opacity:.75; margin-top:6px; }
+  #start .card { margin-top:26px; background:rgba(0,0,0,.3); border:2px solid #4d6b3a; border-radius:14px;
+                 padding:18px 26px; max-width:460px; font-size:13px; line-height:1.9; }
+  #start .card b { color:#ffe08a; }
+  #playBtn { margin-top:26px; pointer-events:auto; cursor:pointer; font-family:inherit; font-size:20px; font-weight:bold;
+             color:#14200e; background:linear-gradient(180deg,#c8f090,#8fce5a); border:none; border-radius:12px;
+             padding:14px 46px; letter-spacing:1px; box-shadow:0 6px 0 #5a8f30, 0 10px 20px rgba(0,0,0,.4); transition:transform .08s; }
+  #playBtn:active { transform:translateY(4px); box-shadow:0 2px 0 #5a8f30; }
+  #start .note { font-size:11px; opacity:.55; margin-top:18px; }
+
+  /* mobile controls */
+  #touch { position:fixed; inset:0; z-index:20; display:none; }
+  #stick { position:absolute; left:26px; bottom:26px; width:120px; height:120px; border-radius:50%;
+           background:rgba(255,255,255,.08); border:2px solid rgba(255,255,255,.2); pointer-events:auto; }
+  #stick .nub { position:absolute; left:35px; top:35px; width:50px; height:50px; border-radius:50%;
+                background:rgba(255,255,255,.28); }
+  .tbtn { position:absolute; pointer-events:auto; width:64px; height:64px; border-radius:50%;
+          background:rgba(255,224,138,.22); border:2px solid #ffe08a; color:#eaffcf; font-size:12px; font-weight:bold;
+          display:flex; align-items:center; justify-content:center; text-align:center; }
+  #btnA { right:26px; bottom:40px; }
+  #btnB { right:104px; bottom:96px; }
+</style>
+</head>
+<body>
+<div id="game"></div>
+
+<div id="hud">
+  <div class="panel" id="clock"><div class="big" id="clockTime">8:00</div><div class="sub" id="clockDay">MORNING · DAY 1</div></div>
+  <div class="panel" id="title"><div class="big">Evermoor Glade</div><div class="sub">COZY FANTASY · PROTOTYPE</div></div>
+  <div class="panel" id="toast"></div>
+  <div class="panel" id="placeMode">◈ PLACING — <b>click ground</b> to set · <b>R</b> rotate · <b>Esc</b> cancel</div>
+  <div class="panel" id="prompt"></div>
+  <div class="panel" id="dialogue"><div class="who" id="dWho"></div><div class="line" id="dLine"></div><div class="hint">▸ <b>E</b> / click to continue</div></div>
+  <div id="hotbar"></div>
+  <div class="panel" id="help">
+    <div class="row"><span>Move</span><b><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></b></div>
+    <div class="row"><span>Look</span><b>drag mouse</b></div>
+    <div class="row"><span>Interact / talk</span><b><kbd>E</kbd></b></div>
+    <div class="row"><span>Pick up item</span><b><kbd>F</kbd></b></div>
+    <div class="row"><span>Select slot</span><b><kbd>1</kbd>–<kbd>4</kbd></b></div>
+    <div class="row"><span>Place held item</span><b><kbd>Q</kbd></b></div>
+  </div>
+</div>
+
+<div id="touch">
+  <div id="stick"><div class="nub"></div></div>
+  <div class="tbtn" id="btnA">TALK<br>PICK</div>
+  <div class="tbtn" id="btnB">PLACE</div>
+</div>
+
+<div id="start">
+  <h1>Evermoor Glade</h1>
+  <div class="tag">A COZY FANTASY LIFE-SIM</div>
+  <div class="card">
+    Wander a little enchanted glade. <b>Chat</b> with the folk who live here,
+    <b>gather</b> flowers, mushrooms, crystals and lanterns, then <b>decorate</b>
+    your corner of the world however you like.<br><br>
+    <b>WASD</b> to walk · <b>drag</b> to look · <b>E</b> to talk · <b>F</b> to gather ·
+    <b>1–4</b> pick an item · <b>Q</b> to place it.
+  </div>
+  <button id="playBtn">Enter the Glade</button>
+  <div class="note">Prototype vertical slice · built with Three.js</div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ============================================================= *
+ *  Evermoor Glade — cozy fantasy life-sim vertical slice
+ *  Core loops: walk · talk · gather · place/decorate · day-night
+ * ============================================================= */
+
+const WORLD = 44;            // half-extent of walkable glade (soft border)
+const clock = new THREE.Clock();
+
+// ---------- renderer / scene / camera ----------
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.getElementById('game').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x8fb98a, 0.010);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 400);
+
+// ---------- lights (day-night driven) ----------
+const hemi = new THREE.HemisphereLight(0xcfe8ff, 0x4b6b3a, 0.9);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff2d0, 1.4);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 1; sun.shadow.camera.far = 160;
+sun.shadow.camera.left = -70; sun.shadow.camera.right = 70;
+sun.shadow.camera.top = 70; sun.shadow.camera.bottom = -70;
+sun.shadow.bias = -0.0004;
+scene.add(sun);
+scene.add(sun.target);
+
+// ---------- ground ----------
+const groundGeo = new THREE.CircleGeometry(WORLD + 14, 72);
+const groundMat = new THREE.MeshStandardMaterial({ color:0x6fae52, roughness:1 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// darker meadow patches for texture
+for (let i=0;i<26;i++){
+  const r = 3 + Math.random()*7;
+  const patch = new THREE.Mesh(new THREE.CircleGeometry(r, 12),
+    new THREE.MeshStandardMaterial({ color: Math.random()<.5?0x649b48:0x7cbb5c, roughness:1 }));
+  patch.rotation.x = -Math.PI/2;
+  const a = Math.random()*Math.PI*2, d = Math.random()*WORLD;
+  patch.position.set(Math.cos(a)*d, 0.01, Math.sin(a)*d);
+  patch.receiveShadow = true;
+  scene.add(patch);
+}
+
+// a little pond
+const pond = new THREE.Mesh(new THREE.CircleGeometry(6, 40),
+  new THREE.MeshStandardMaterial({ color:0x3f8fb0, roughness:0.25, metalness:0.1, transparent:true, opacity:0.9 }));
+pond.rotation.x = -Math.PI/2;
+pond.position.set(-16, 0.02, 14);
+scene.add(pond);
+
+// ---------- collision registry ----------
+const obstacles = [];  // {x,z,r}
+function addObstacle(x,z,r){ obstacles.push({x,z,r}); }
+
+// ---------- decorative props: trees, mushrooms, crystals ----------
+function makeTree(x,z,scale=1){
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.4,2.4,7),
+    new THREE.MeshStandardMaterial({ color:0x7a5230, roughness:1 }));
+  trunk.position.y = 1.2; trunk.castShadow = true; g.add(trunk);
+  const canopyMat = new THREE.MeshStandardMaterial({ color:0x3f7d3a, roughness:1 });
+  for (let i=0;i<3;i++){
+    const c = new THREE.Mesh(new THREE.ConeGeometry(2.2-i*0.4, 2.0, 8), canopyMat);
+    c.position.y = 2.6 + i*1.2; c.castShadow = true; g.add(c);
+  }
+  g.position.set(x,0,z); g.scale.setScalar(scale);
+  scene.add(g);
+  addObstacle(x,z,0.8*scale);
+  return g;
+}
+function makeGlowMushroom(x,z){
+  const g = new THREE.Group();
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.16,0.7,6),
+    new THREE.MeshStandardMaterial({ color:0xe8e0d0, roughness:1 }));
+  stem.position.y = 0.35; stem.castShadow = true; g.add(stem);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 8, 0, Math.PI*2, 0, Math.PI/2),
+    new THREE.MeshStandardMaterial({ color:0x8a5cff, emissive:0x5a30c0, emissiveIntensity:0.7, roughness:0.6 }));
+  cap.position.y = 0.7; cap.scale.y = 0.7; cap.castShadow = true; g.add(cap);
+  const light = new THREE.PointLight(0x9a6bff, 0.0, 6, 2); light.position.y = 0.8; g.add(light);
+  g.userData.nightLight = light;
+  g.position.set(x,0,z); scene.add(g);
+  return g;
+}
+function makeCrystalCluster(x,z){
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color:0x7fe6ff, emissive:0x2b7fa0, emissiveIntensity:0.5,
+    roughness:0.15, metalness:0.2, transparent:true, opacity:0.9 });
+  for (let i=0;i<4;i++){
+    const c = new THREE.Mesh(new THREE.ConeGeometry(0.22+Math.random()*0.1, 0.9+Math.random()*0.6, 5), mat);
+    c.position.set((Math.random()-.5)*0.5, (0.45+Math.random()*0.3), (Math.random()-.5)*0.5);
+    c.rotation.z = (Math.random()-.5)*0.4; c.castShadow = true; g.add(c);
+  }
+  g.position.set(x,0,z); scene.add(g);
+  addObstacle(x,z,0.6);
+  return g;
+}
+
+// tree ring around the glade + scattered inside
+const treeRingCount = 42;
+for (let i=0;i<treeRingCount;i++){
+  const a = (i/treeRingCount)*Math.PI*2;
+  const d = WORLD + 3 + Math.random()*8;
+  makeTree(Math.cos(a)*d, Math.sin(a)*d, 0.9+Math.random()*0.7);
+}
+const scatterSpots = [[10,-8],[18,6],[-22,-10],[6,20],[-8,-20],[24,-16],[-26,8]];
+scatterSpots.forEach(([x,z])=>makeTree(x,z,0.8+Math.random()*0.5));
+for (let i=0;i<14;i++){
+  const a = Math.random()*Math.PI*2, d = 4+Math.random()*(WORLD-6);
+  makeGlowMushroom(Math.cos(a)*d, Math.sin(a)*d);
+}
+makeCrystalCluster(20, 18); makeCrystalCluster(-30, -4);
+
+// grass tufts (cheap billboarded-ish blades)
+const tuftGeo = new THREE.ConeGeometry(0.06, 0.5, 4);
+const tuftMat = new THREE.MeshStandardMaterial({ color:0x4f9e3e, roughness:1 });
+const tufts = new THREE.InstancedMesh(tuftGeo, tuftMat, 900);
+const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+for (let i=0;i<900;i++){
+  const a = Math.random()*Math.PI*2, d = Math.random()*WORLD;
+  const x = Math.cos(a)*d, z = Math.sin(a)*d;
+  sc.set(1, 0.7+Math.random()*0.9, 1);
+  m4.compose(new THREE.Vector3(x, 0.22, z), q, sc);
+  tufts.setMatrixAt(i, m4);
+}
+tufts.castShadow = false; tufts.receiveShadow = false;
+scene.add(tufts);
+
+// ---------- village: a couple of little houses / signpost ----------
+function makeHouse(x,z,rot,color){
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.BoxGeometry(4,2.4,3.4),
+    new THREE.MeshStandardMaterial({ color, roughness:0.9 }));
+  base.position.y = 1.2; base.castShadow = true; base.receiveShadow = true; g.add(base);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(3.4,1.8,4),
+    new THREE.MeshStandardMaterial({ color:0x8a4b3a, roughness:1 }));
+  roof.position.y = 3.3; roof.rotation.y = Math.PI/4; roof.castShadow = true; g.add(roof);
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.9,1.5,0.1),
+    new THREE.MeshStandardMaterial({ color:0x5a3a22 }));
+  door.position.set(0,0.9,1.72); g.add(door);
+  g.position.set(x,0,z); g.rotation.y = rot; scene.add(g);
+  addObstacle(x,z,2.6);
+  return g;
+}
+makeHouse(-6, -8, 0.3, 0xd8c48a);
+makeHouse(9, -4, -0.6, 0xbcd0e0);
+
+// ---------- character builder (player + villagers share the look) ----------
+function makeCritter(bodyColor, accentColor, kind){
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color:bodyColor, roughness:0.85 });
+  const accMat  = new THREE.MeshStandardMaterial({ color:accentColor, roughness:0.7 });
+
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.5, 6, 12), bodyMat);
+  body.position.y = 0.85; body.castShadow = true; g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.44, 16, 12), bodyMat);
+  head.position.y = 1.7; head.castShadow = true; g.add(head);
+
+  // eyes
+  const eyeMat = new THREE.MeshStandardMaterial({ color:0x161616 });
+  for (const s of [-1,1]){
+    const e = new THREE.Mesh(new THREE.SphereGeometry(0.075,8,8), eyeMat);
+    e.position.set(0.16*s, 1.74, 0.38); g.add(e);
+  }
+  // ears vary by kind
+  if (kind==='fox'){
+    for (const s of [-1,1]){
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.18,0.36,5), accMat);
+      ear.position.set(0.22*s, 2.08, 0); ear.castShadow=true; g.add(ear);
+    }
+  } else if (kind==='mush'){
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.55,14,10,0,Math.PI*2,0,Math.PI/2), accMat);
+    cap.position.y = 2.0; cap.scale.y=0.7; cap.castShadow=true; g.add(cap);
+  } else if (kind==='frog'){
+    for (const s of [-1,1]){
+      const eb = new THREE.Mesh(new THREE.SphereGeometry(0.16,10,10), bodyMat);
+      eb.position.set(0.2*s, 2.02, 0.05); g.add(eb);
+      const ep = new THREE.Mesh(new THREE.SphereGeometry(0.07,8,8), eyeMat);
+      ep.position.set(0.2*s, 2.08, 0.18); g.add(ep);
+    }
+  }
+  // simple limbs for a bob animation
+  const legMat = accMat;
+  const legL = new THREE.Mesh(new THREE.CapsuleGeometry(0.14,0.3,4,8), legMat);
+  const legR = legL.clone();
+  legL.position.set(-0.2,0.35,0); legR.position.set(0.2,0.35,0);
+  legL.castShadow=legR.castShadow=true; g.add(legL); g.add(legR);
+  g.userData.legs = [legL, legR];
+  g.userData.head = head;
+  return g;
+}
+
+// ---------- player ----------
+const player = makeCritter(0xffd27a, 0xe08a3a, 'fox');
+player.position.set(0, 0, 6);
+scene.add(player);
+const playerState = { angle: Math.PI, speed: 0, walkPhase: 0 };
+
+// ---------- villagers ----------
+const villagers = [];
+function addVillager(opts){
+  const v = makeCritter(opts.body, opts.accent, opts.kind);
+  v.position.set(opts.x, 0, opts.z);
+  v.rotation.y = opts.face ?? 0;
+  scene.add(v);
+  addObstacle(opts.x, opts.z, 0.6);
+  villagers.push({
+    group:v, name:opts.name, lines:opts.lines,
+    home:new THREE.Vector3(opts.x,0,opts.z), t:Math.random()*10, bob:Math.random()*6
+  });
+}
+addVillager({
+  name:'Pip the Mushroomfolk', body:0xf0e6d0, accent:0xd85a7a, kind:'mush', x:-6, z:2, face:0.4,
+  lines:[
+    "Oh! A new face in Evermoor. How lovely.",
+    "This glade's been sleepy for ages. It could use a spark of colour…",
+    "Try gathering a few things and setting them down where you like. Make it *yours*.",
+    "The night-blooms light up after dusk. Stick around and you'll see."
+  ]
+});
+addVillager({
+  name:'Bramble the Fox-Mage', body:0xff9a5a, accent:0x9a4a2a, kind:'fox', x:11, z:-1, face:-1.6,
+  lines:[
+    "Careful where you tread — the crystals hum if you listen.",
+    "Magic here is mostly chores, honestly. Gather, tidy, plant, repeat.",
+    "Bring me a crystal someday and I'll show you a proper trick.",
+    "You can rotate a thing before you place it. Little details matter."
+  ]
+});
+addVillager({
+  name:'Dewdrop the Frog', body:0x7fc85a, accent:0x4a8a3a, kind:'frog', x:-13, z:11, face:2.2,
+  lines:[
+    "*bloop* … oh, hello up there.",
+    "I mind the pond. It's cold and it's mine and it's perfect.",
+    "Drop a lantern near the water sometime? It looks ever so pretty reflected."
+  ]
+});
+
+// ---------- gatherable items in the world ----------
+// kind => {emoji, color, make(), give}
+const ITEM_TYPES = {
+  flower:  { emoji:'🌸', label:'Flower',  color:0xff8ad0 },
+  mushroom:{ emoji:'🍄', label:'Mushroom',color:0xd85a4a },
+  crystal: { emoji:'🔮', label:'Crystal', color:0x7fe6ff },
+  lantern: { emoji:'🏮', label:'Lantern', color:0xffb24a },
+};
+const HOTBAR_ORDER = ['flower','mushroom','crystal','lantern'];
+
+function makeItemMesh(kind, small){
+  const t = ITEM_TYPES[kind];
+  const g = new THREE.Group();
+  const s = small ? 0.7 : 1;
+  if (kind==='flower'){
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.05,0.5,5),
+      new THREE.MeshStandardMaterial({ color:0x4f9e3e })); stem.position.y=0.25; g.add(stem);
+    const petMat = new THREE.MeshStandardMaterial({ color:t.color, roughness:0.7, emissive:0x3a1030, emissiveIntensity:0.15 });
+    for (let i=0;i<5;i++){
+      const p = new THREE.Mesh(new THREE.SphereGeometry(0.12,8,8), petMat);
+      const a = i/5*Math.PI*2; p.position.set(Math.cos(a)*0.14, 0.52, Math.sin(a)*0.14); p.scale.set(1,0.6,1); g.add(p);
+    }
+    const mid = new THREE.Mesh(new THREE.SphereGeometry(0.1,8,8), new THREE.MeshStandardMaterial({color:0xffe08a}));
+    mid.position.y=0.54; g.add(mid);
+  } else if (kind==='mushroom'){
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.13,0.4,6),
+      new THREE.MeshStandardMaterial({color:0xe8e0d0})); stem.position.y=0.2; g.add(stem);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.28,12,8,0,Math.PI*2,0,Math.PI/2),
+      new THREE.MeshStandardMaterial({color:t.color, roughness:0.8})); cap.position.y=0.4; cap.scale.y=0.7; g.add(cap);
+  } else if (kind==='crystal'){
+    const mat = new THREE.MeshStandardMaterial({ color:t.color, emissive:0x2b7fa0, emissiveIntensity:0.6,
+      roughness:0.15, metalness:0.2, transparent:true, opacity:0.92 });
+    const c = new THREE.Mesh(new THREE.ConeGeometry(0.2,0.7,5), mat); c.position.y=0.35; g.add(c);
+    const c2 = new THREE.Mesh(new THREE.ConeGeometry(0.13,0.45,5), mat); c2.position.set(0.16,0.22,0.05); c2.rotation.z=-0.4; g.add(c2);
+  } else if (kind==='lantern'){
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.22,0.5,8),
+      new THREE.MeshStandardMaterial({color:0x7a5230})); body.position.y=0.4; g.add(body);
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.16,10,8),
+      new THREE.MeshStandardMaterial({color:0xffd680, emissive:0xffb24a, emissiveIntensity:1.1})); glow.position.y=0.4; g.add(glow);
+    const light = new THREE.PointLight(0xffb24a, 0.0, 5, 2); light.position.y=0.4; g.add(light);
+    g.userData.nightLight = light;
+  }
+  g.children.forEach(ch=>{ ch.castShadow = true; });
+  g.scale.setScalar(s);
+  return g;
+}
+
+// spawn gatherables scattered in the glade
+const gatherables = []; // {group, kind}
+function spawnGatherable(kind, x, z){
+  const mesh = makeItemMesh(kind, false);
+  mesh.position.set(x, 0, z);
+  mesh.userData.baseY = 0;
+  scene.add(mesh);
+  gatherables.push({ group:mesh, kind });
+}
+function scatterGatherables(){
+  const plan = [['flower',10],['mushroom',7],['crystal',4],['lantern',5]];
+  for (const [kind,n] of plan){
+    for (let i=0;i<n;i++){
+      let x,z,ok=false,tries=0;
+      while(!ok && tries++<20){
+        const a=Math.random()*Math.PI*2, d=5+Math.random()*(WORLD-8);
+        x=Math.cos(a)*d; z=Math.sin(a)*d; ok=true;
+        for (const o of obstacles){ if ((x-o.x)**2+(z-o.z)**2 < (o.r+0.8)**2){ ok=false; break; } }
+        if (Math.hypot(x+16, z-14) < 7) ok=false; // keep out of pond
+      }
+      spawnGatherable(kind, x, z);
+    }
+  }
+}
+scatterGatherables();
+
+// placed decorations persist (in-memory for the slice)
+const placed = [];
+
+// ---------- inventory ----------
+const inventory = { flower:0, mushroom:0, crystal:0, lantern:0 };
+let activeSlot = 0; // index into HOTBAR_ORDER
+
+// build hotbar DOM
+const hotbarEl = document.getElementById('hotbar');
+const slotEls = {};
+HOTBAR_ORDER.forEach((kind, i)=>{
+  const t = ITEM_TYPES[kind];
+  const el = document.createElement('div');
+  el.className = 'slot';
+  el.innerHTML = `<span class="key">${i+1}</span><span class="emoji">${t.emoji}</span>`+
+                 `<span class="count" id="count-${kind}">0</span><span class="name">${t.label}</span>`;
+  el.addEventListener('click', ()=>selectSlot(i));
+  hotbarEl.appendChild(el);
+  slotEls[kind] = el;
+});
+function refreshHotbar(){
+  HOTBAR_ORDER.forEach((kind,i)=>{
+    document.getElementById('count-'+kind).textContent = inventory[kind];
+    slotEls[kind].classList.toggle('active', i===activeSlot);
+  });
+}
+function selectSlot(i){ activeSlot = i; refreshHotbar(); }
+refreshHotbar();
+
+// ---------- HUD helpers ----------
+const toastEl = document.getElementById('toast');
+let toastTimer = 0;
+function toast(msg){ toastEl.textContent = msg; toastEl.classList.add('show'); toastTimer = 2.2; }
+
+const promptEl = document.getElementById('prompt');
+function setPrompt(html){ if(html){ promptEl.style.display='block'; promptEl.innerHTML=html; } else promptEl.style.display='none'; }
+
+// ---------- dialogue ----------
+const dlgEl = document.getElementById('dialogue');
+const dWho = document.getElementById('dWho'), dLine = document.getElementById('dLine');
+let dialogue = null; // {villager, idx}
+function openDialogue(v){
+  dialogue = { villager:v, idx:0 };
+  dWho.textContent = v.name;
+  dLine.textContent = v.lines[0];
+  dlgEl.style.display = 'block';
+  setPrompt(null);
+}
+function advanceDialogue(){
+  if(!dialogue) return;
+  dialogue.idx++;
+  if(dialogue.idx >= dialogue.villager.lines.length){ closeDialogue(); return; }
+  dLine.textContent = dialogue.villager.lines[dialogue.idx];
+}
+function closeDialogue(){ dialogue=null; dlgEl.style.display='none'; }
+dlgEl.addEventListener('click', advanceDialogue);
+
+// ---------- input ----------
+const keys = {};
+addEventListener('keydown', e=>{
+  const k = e.key.toLowerCase();
+  keys[k] = true;
+  if (k==='e'){ if(dialogue) advanceDialogue(); else interact(); }
+  if (k==='f') tryGather();
+  if (k==='q') tryPlace();
+  if (k==='r' && placeMode) placeRot += Math.PI/8;
+  if (k==='escape') cancelPlace();
+  if (['1','2','3','4'].includes(k)) selectSlot(parseInt(k)-1);
+});
+addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
+
+// mouse-drag camera orbit
+let camYaw = 0, camPitch = 0.5, dragging = false, lastX=0, lastY=0;
+const cv = renderer.domElement;
+cv.addEventListener('pointerdown', e=>{ dragging=true; lastX=e.clientX; lastY=e.clientY; });
+addEventListener('pointerup', ()=>{ dragging=false; });
+addEventListener('pointermove', e=>{
+  if(!dragging) return;
+  camYaw   -= (e.clientX-lastX)*0.005;
+  camPitch = Math.max(0.15, Math.min(1.2, camPitch - (e.clientY-lastY)*0.004));
+  lastX=e.clientX; lastY=e.clientY;
+});
+// click ground to place while in place-mode
+cv.addEventListener('click', e=>{ if(placeMode) confirmPlaceAtPointer(e); });
+
+// ---------- interactions ----------
+function nearestVillager(){
+  let best=null, bd=1e9;
+  for(const v of villagers){
+    const d = player.position.distanceTo(v.group.position);
+    if(d<bd){ bd=d; best=v; }
+  }
+  return { v:best, d:bd };
+}
+function nearestGatherable(){
+  let best=null, bd=1e9, bi=-1;
+  gatherables.forEach((it,i)=>{
+    const d = player.position.distanceTo(it.group.position);
+    if(d<bd){ bd=d; best=it; bi=i; }
+  });
+  return { it:best, d:bd, i:bi };
+}
+function interact(){
+  const { v, d } = nearestVillager();
+  if(v && d<2.4) openDialogue(v);
+}
+function tryGather(){
+  if(dialogue) return;
+  const { it, d, i } = nearestGatherable();
+  if(it && d<2.0){
+    inventory[it.kind]++;
+    scene.remove(it.group);
+    gatherables.splice(i,1);
+    const t = ITEM_TYPES[it.kind];
+    // jump active slot to what we just picked
+    activeSlot = HOTBAR_ORDER.indexOf(it.kind);
+    refreshHotbar();
+    toast(`Gathered ${t.emoji} ${t.label}`);
+    slotEls[it.kind].animate([{transform:'translateY(-4px) scale(1.15)'},{transform:'translateY(-4px) scale(1)'}],{duration:220});
+  }
+}
+
+// ---------- placement mode ----------
+let placeMode = false, placeGhost = null, placeRot = 0;
+const placeModeEl = document.getElementById('placeMode');
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+
+function tryPlace(){
+  if(dialogue) return;
+  const kind = HOTBAR_ORDER[activeSlot];
+  if(inventory[kind] <= 0){ toast(`No ${ITEM_TYPES[kind].label.toLowerCase()}s to place`); return; }
+  if(placeMode){ cancelPlace(); return; }
+  placeMode = true; placeRot = 0;
+  placeGhost = makeItemMesh(kind, false);
+  placeGhost.traverse(o=>{ if(o.material){ o.material = o.material.clone(); o.material.transparent=true; o.material.opacity=0.5; }});
+  scene.add(placeGhost);
+  placeModeEl.style.display = 'block';
+  // start the ghost just in front of the player
+  updateGhostToPlayerFront();
+}
+function updateGhostToPlayerFront(){
+  const fx = player.position.x - Math.sin(playerState.angle)*2.2;
+  const fz = player.position.z - Math.cos(playerState.angle)*2.2;
+  if(placeGhost) placeGhost.position.set(fx, 0, fz);
+}
+function pointerToGround(e){
+  ndc.x = (e.clientX/innerWidth)*2 - 1;
+  ndc.y = -(e.clientY/innerHeight)*2 + 1;
+  raycaster.setFromCamera(ndc, camera);
+  const hit = new THREE.Vector3();
+  const plane = new THREE.Plane(new THREE.Vector3(0,1,0), 0);
+  raycaster.ray.intersectPlane(plane, hit);
+  return hit;
+}
+function confirmPlaceAtPointer(e){
+  const hit = pointerToGround(e);
+  if(!hit) return;
+  const d = Math.hypot(hit.x, hit.z);
+  if(d > WORLD){ toast('Too far — place inside the glade'); return; }
+  const kind = HOTBAR_ORDER[activeSlot];
+  if(inventory[kind] <= 0){ cancelPlace(); return; }
+  const mesh = makeItemMesh(kind, false);
+  mesh.position.set(hit.x, 0, hit.z);
+  mesh.rotation.y = placeRot;
+  scene.add(mesh);
+  placed.push({ group:mesh, kind });
+  inventory[kind]--;
+  refreshHotbar();
+  toast(`Placed ${ITEM_TYPES[kind].emoji}`);
+  if(inventory[kind] <= 0 || !keys['shift']) cancelPlace();
+}
+function cancelPlace(){
+  placeMode = false;
+  if(placeGhost){ scene.remove(placeGhost); placeGhost=null; }
+  placeModeEl.style.display = 'none';
+}
+
+// track pointer for ghost follow
+let lastPointer = { x: innerWidth/2, y: innerHeight/2 };
+addEventListener('pointermove', e=>{ lastPointer.x=e.clientX; lastPointer.y=e.clientY; });
+
+// ---------- day-night cycle ----------
+// full day = 240s. time starts at 8:00 (t=0.333 of day)
+const DAY_LEN = 240;
+let dayT = 8/24;
+let dayNum = 1;
+const skyTop = new THREE.Color(), skyBot = new THREE.Color();
+const sceneBg = new THREE.Color();
+scene.background = sceneBg;
+
+// keyframes: [hourFraction, sunColor, sunIntensity, hemiSky, hemiGround, hemiInt, fog]
+const DAY_KEYS = [
+  { t:0.00, sun:0x24406a, si:0.15, sky:0x2a3a66, gnd:0x101a2a, hi:0.30, fog:0x1a2440 }, // midnight
+  { t:0.25, sun:0xffb56a, si:0.9,  sky:0xffd9a0, gnd:0x6a6a4a, hi:0.7,  fog:0xf0c090 }, // dawn 6:00
+  { t:0.50, sun:0xfff2d0, si:1.5,  sky:0xbfe4ff, gnd:0x5b7a3a, hi:1.0,  fog:0xbfe0d0 }, // noon
+  { t:0.75, sun:0xff9a5a, si:0.85, sky:0xff9e6a, gnd:0x4a3a2a, hi:0.65, fog:0xe08a5a }, // dusk 18:00
+  { t:1.00, sun:0x24406a, si:0.15, sky:0x2a3a66, gnd:0x101a2a, hi:0.30, fog:0x1a2440 }, // midnight
+];
+const cA = new THREE.Color(), cB = new THREE.Color();
+function lerpColor(hexA, hexB, f, out){ cA.setHex(hexA); cB.setHex(hexB); out.copy(cA).lerp(cB, f); return out; }
+const tmpSky = new THREE.Color(), tmpGnd = new THREE.Color(), tmpFog = new THREE.Color(), tmpSun = new THREE.Color();
+
+function updateDayNight(){
+  // find surrounding keyframes
+  let a=DAY_KEYS[0], b=DAY_KEYS[1];
+  for(let i=0;i<DAY_KEYS.length-1;i++){
+    if(dayT>=DAY_KEYS[i].t && dayT<=DAY_KEYS[i+1].t){ a=DAY_KEYS[i]; b=DAY_KEYS[i+1]; break; }
+  }
+  const f = (dayT-a.t)/((b.t-a.t)||1);
+  const si = a.si + (b.si-a.si)*f;
+  const hi = a.hi + (b.hi-a.hi)*f;
+  lerpColor(a.sun,b.sun,f,tmpSun); sun.color.copy(tmpSun); sun.intensity = si;
+  lerpColor(a.sky,b.sky,f,tmpSky); hemi.color.copy(tmpSky);
+  lerpColor(a.gnd,b.gnd,f,tmpGnd); hemi.groundColor.copy(tmpGnd);
+  hemi.intensity = hi;
+  lerpColor(a.fog,b.fog,f,tmpFog);
+  scene.fog.color.copy(tmpFog);
+  sceneBg.copy(tmpFog).lerp(new THREE.Color(0x6aa0d0), 0.15);
+
+  // sun position arcs across sky
+  const ang = (dayT-0.25)*Math.PI*2; // sunrise at t=.25
+  sun.position.set(Math.cos(ang)*60, Math.max(4, Math.sin(ang)*70), 30);
+  sun.target.position.copy(player.position);
+
+  // night: turn on glow lights
+  const night = (si < 0.6) ? THREE.MathUtils.clamp((0.6-si)/0.45,0,1) : 0;
+  scene.traverse(o=>{ if(o.userData && o.userData.nightLight){ o.userData.nightLight.intensity = night*1.6; }});
+}
+
+// clock HUD
+const clockTimeEl = document.getElementById('clockTime');
+const clockDayEl = document.getElementById('clockDay');
+function updateClockHUD(){
+  const totalMin = Math.floor(dayT*24*60);
+  let h = Math.floor(totalMin/60), mm = totalMin%60;
+  const ampmH = ((h+11)%12)+1;
+  clockTimeEl.textContent = `${ampmH}:${mm<10?'0':''}${mm}`;
+  let phase = 'NIGHT';
+  const hf = dayT*24;
+  if(hf>=5 && hf<11) phase='MORNING';
+  else if(hf>=11 && hf<16) phase='MIDDAY';
+  else if(hf>=16 && hf<20) phase='EVENING';
+  clockDayEl.textContent = `${phase} · DAY ${dayNum}`;
+}
+
+// ---------- movement + collision ----------
+function movePlayer(dt, ix, iz){
+  // ix,iz are camera-relative input (-1..1)
+  const len = Math.hypot(ix,iz);
+  const moving = len > 0.05 && !dialogue;
+  if(moving){
+    // desired world direction from camera yaw
+    const forward = new THREE.Vector3(-Math.sin(camYaw), 0, -Math.cos(camYaw));
+    const right   = new THREE.Vector3(Math.cos(camYaw), 0, -Math.sin(camYaw));
+    const dir = new THREE.Vector3()
+      .addScaledVector(forward, -iz)
+      .addScaledVector(right, ix).normalize();
+    playerState.angle = Math.atan2(-dir.x, -dir.z);
+    const SPEED = 6.5;
+    let nx = player.position.x + dir.x*SPEED*dt;
+    let nz = player.position.z + dir.z*SPEED*dt;
+    // collide with obstacles
+    for(const o of obstacles){
+      const dx=nx-o.x, dz=nz-o.z, rr=o.r+0.5;
+      const dd=Math.hypot(dx,dz);
+      if(dd<rr && dd>0.0001){ nx=o.x+dx/dd*rr; nz=o.z+dz/dd*rr; }
+    }
+    // pond block
+    const pdx=nx+16, pdz=nz-14, pd=Math.hypot(pdx,pdz);
+    if(pd<6.4){ nx=-16+pdx/pd*6.4; nz=14+pdz/pd*6.4; }
+    // soft glade border
+    const bd=Math.hypot(nx,nz);
+    if(bd>WORLD){ nx=nx/bd*WORLD; nz=nz/bd*WORLD; }
+    player.position.x = nx; player.position.z = nz;
+    playerState.walkPhase += dt*12;
+    playerState.speed = SPEED;
+  } else {
+    playerState.speed = 0;
+  }
+  // smooth turn toward heading
+  let da = playerState.angle - player.rotation.y;
+  while(da>Math.PI) da-=Math.PI*2; while(da<-Math.PI) da+=Math.PI*2;
+  player.rotation.y += da*Math.min(1, dt*12);
+
+  // leg bob
+  const legs = player.userData.legs;
+  const amp = moving ? 0.5 : 0;
+  legs[0].rotation.x = Math.sin(playerState.walkPhase)*amp;
+  legs[1].rotation.x = -Math.sin(playerState.walkPhase)*amp;
+  player.position.y = moving ? Math.abs(Math.sin(playerState.walkPhase))*0.06 : 0;
+}
+
+// ---------- camera follow ----------
+const camTarget = new THREE.Vector3();
+function updateCamera(dt){
+  const dist = 9, height = 4.5 + camPitch*3;
+  const cx = player.position.x + Math.sin(camYaw)*dist;
+  const cz = player.position.z + Math.cos(camYaw)*dist;
+  camTarget.set(cx, height, cz);
+  camera.position.lerp(camTarget, Math.min(1, dt*6));
+  camera.lookAt(player.position.x, player.position.y+1.4, player.position.z);
+}
+
+// ---------- villager idle behaviour ----------
+function updateVillagers(dt){
+  for(const v of villagers){
+    v.bob += dt;
+    v.group.userData.head.position.y = 1.7 + Math.sin(v.bob*1.5)*0.03;
+    // gentle idle turn toward player when close
+    const d = player.position.distanceTo(v.group.position);
+    if(d < 4){
+      const ang = Math.atan2(player.position.x - v.group.position.x, player.position.z - v.group.position.z);
+      let da = ang - v.group.rotation.y;
+      while(da>Math.PI) da-=Math.PI*2; while(da<-Math.PI) da+=Math.PI*2;
+      v.group.rotation.y += da*Math.min(1, dt*3);
+    }
+  }
+}
+
+// ---------- gatherable float animation ----------
+function updateGatherables(t){
+  for(const it of gatherables){
+    it.group.rotation.y = t*0.8;
+    it.group.position.y = 0.15 + Math.sin(t*2 + it.group.position.x)*0.08;
+  }
+}
+
+// ---------- prompt logic each frame ----------
+function updatePrompts(){
+  if(dialogue || placeMode){ setPrompt(null); return; }
+  const nv = nearestVillager();
+  const ng = nearestGatherable();
+  if(ng.it && ng.d<2.0){
+    setPrompt(`<b>F</b> gather ${ITEM_TYPES[ng.it.kind].emoji} ${ITEM_TYPES[ng.it.kind].label}`);
+  } else if(nv.v && nv.d<2.4){
+    setPrompt(`<b>E</b> talk to ${nv.v.name.split(' ')[0]}`);
+  } else {
+    const kind = HOTBAR_ORDER[activeSlot];
+    if(inventory[kind]>0) setPrompt(`<b>Q</b> place ${ITEM_TYPES[kind].emoji} ${ITEM_TYPES[kind].label}`);
+    else setPrompt(null);
+  }
+}
+
+// ---------- touch controls ----------
+let touchVec = { x:0, y:0 };
+const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window;
+if(isTouch){
+  document.getElementById('touch').style.display='block';
+  const stick = document.getElementById('stick');
+  const nub = stick.querySelector('.nub');
+  let sid=null, cx=0, cy=0;
+  stick.addEventListener('touchstart', e=>{ const r=stick.getBoundingClientRect(); cx=r.left+r.width/2; cy=r.top+r.height/2; sid=e.changedTouches[0].identifier; }, {passive:true});
+  stick.addEventListener('touchmove', e=>{
+    for(const t of e.changedTouches){ if(t.identifier===sid){
+      let dx=t.clientX-cx, dy=t.clientY-cy; const mag=Math.min(45,Math.hypot(dx,dy))||1;
+      const nx=dx/(Math.hypot(dx,dy)||1), ny=dy/(Math.hypot(dx,dy)||1);
+      touchVec.x = nx*(mag/45); touchVec.y = ny*(mag/45);
+      nub.style.transform=`translate(${nx*mag}px,${ny*mag}px)`;
+    }}
+  }, {passive:true});
+  const endStick=()=>{ sid=null; touchVec.x=0; touchVec.y=0; nub.style.transform='translate(0,0)'; };
+  stick.addEventListener('touchend', endStick, {passive:true});
+  document.getElementById('btnA').addEventListener('touchstart', e=>{ e.preventDefault(); if(dialogue) advanceDialogue(); else { const ng=nearestGatherable(); if(ng.it&&ng.d<2.0) tryGather(); else interact(); } });
+  document.getElementById('btnB').addEventListener('touchstart', e=>{ e.preventDefault(); if(placeMode){ /* place at player front */ const fx=player.position.x-Math.sin(playerState.angle)*2.2, fz=player.position.z-Math.cos(playerState.angle)*2.2; const kind=HOTBAR_ORDER[activeSlot]; if(inventory[kind]>0){ const mesh=makeItemMesh(kind,false); mesh.position.set(fx,0,fz); mesh.rotation.y=placeRot; scene.add(mesh); placed.push({group:mesh,kind}); inventory[kind]--; refreshHotbar(); toast('Placed '+ITEM_TYPES[kind].emoji);} cancelPlace(); } else tryPlace(); });
+}
+
+// ---------- main loop ----------
+let started = false;
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.05, clock.getDelta());
+  const t = clock.elapsedTime;
+  if(!started) return;
+
+  // advance time of day
+  dayT += dt / DAY_LEN;
+  if(dayT >= 1){ dayT -= 1; dayNum++; toast(`☀ A new day dawns — Day ${dayNum}`); }
+  updateDayNight();
+  updateClockHUD();
+
+  // input vector
+  let ix=0, iz=0;
+  if(keys['w']||keys['arrowup']) iz-=1;
+  if(keys['s']||keys['arrowdown']) iz+=1;
+  if(keys['a']||keys['arrowleft']) ix-=1;
+  if(keys['d']||keys['arrowright']) ix+=1;
+  if(isTouch){ ix += touchVec.x; iz += touchVec.y; }
+
+  movePlayer(dt, ix, iz);
+  updateCamera(dt);
+  updateVillagers(dt);
+  updateGatherables(t);
+
+  // ghost follows pointer while placing
+  if(placeMode && placeGhost){
+    const hit = pointerToGround(lastPointer);
+    if(hit){ const d=Math.hypot(hit.x,hit.z); if(d<=WORLD){ placeGhost.position.set(hit.x,0,hit.z);} }
+    placeGhost.rotation.y = placeRot;
+  }
+
+  updatePrompts();
+
+  if(toastTimer>0){ toastTimer-=dt; if(toastTimer<=0) toastEl.classList.remove('show'); }
+
+  renderer.render(scene, camera);
+}
+animate();
+
+// ---------- resize ----------
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ---------- start ----------
+document.getElementById('playBtn').addEventListener('click', ()=>{
+  document.getElementById('start').style.display='none';
+  started = true;
+  clock.getDelta(); // reset dt spike
+  toast('Welcome to Evermoor Glade 🌿');
+});
+</script>
+</body>
+</html>
