@@ -18,6 +18,17 @@ No build step — just open `index.html`.
 Two tracks (Tourney Green, Highland Run), health/spin-out combat, catch-up, WebAudio
 music & SFX, and a settings menu (volume, graphics, difficulty, time-of-day).
 
+## Evermoor Glade (prototype)
+
+An early vertical slice of a **cozy fantasy life-sim** (think Animal Crossing with
+magic) lives at [`/glade`](https://lance-and-spur.vercel.app/glade). Wander an
+enchanted glade, chat with the villagers (Pip the Mushroomfolk, Bramble the
+Fox-Mage, Dewdrop the Frog), gather flowers/mushrooms/crystals/lanterns, and
+decorate your corner of the world. Full day–night cycle with night-blooming lights.
+
+- **WASD** walk · **drag** to look · **E** talk · **F** gather · **1–4** select item · **Q** place
+- Same single-file Three.js setup as the main game — see `glade.html`.
+
 ## Deploy
 
 Static site — Vercel serves `index.html` directly (`outputDirectory: "."`). Pushes to
