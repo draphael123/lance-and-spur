@@ -622,88 +622,127 @@ function makeHouse(x,z,rot,color){
 makeHouse(-6, -8, 0.3, 0xd8c48a);
 makeHouse(9, -4, -0.6, 0xbcd0e0);
 
-// ---------- character builder (player + villagers share the look) ----------
+// ---------- character builder — stylised humanoid villagers ----------
 const HEAD_Y = 1.5;
-function makeCritter(bodyColor, accentColor, kind){
+const mat = (color, extra={}) => new THREE.MeshStandardMaterial({ color, roughness:0.85, ...extra });
+function makeVillager(look={}){
+  const o = {
+    skin:0xf1c9a0, hair:0x5a3a22, hairStyle:'short', outfit:0x5a86c8, trim:0xffffff,
+    boots:0x5a3a22, hat:'none', hatColor:0xcf4a3a, beard:false, ...look
+  };
   const g = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({ color:bodyColor, roughness:0.85 });
-  const accMat  = new THREE.MeshStandardMaterial({ color:accentColor, roughness:0.7 });
-  const eyeMat  = new THREE.MeshStandardMaterial({ color:0x1a1a1a, roughness:0.4 });
-  const eyes = [], ears = [];
+  const skinMat = mat(o.skin), hairMat = mat(o.hair, {roughness:1});
+  const outfitMat = mat(o.outfit), trimMat = mat(o.trim), bootMat = mat(o.boots);
+  const eyeMat = mat(0x241a12, {roughness:0.35});
+  const eyes = [], ears = [];  // ears kept empty (humans) so twitch loop no-ops
 
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.5, 6, 12), bodyMat);
-  body.position.y = 0.85; body.castShadow = true; g.add(body);
+  // --- torso: a little flared tunic (this is the 'body' that squashes) ---
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.46, 0.74, 14), outfitMat);
+  body.position.y = 0.92; body.castShadow = true; g.add(body);
+  const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.42,0.12,14), mat(o.boots));
+  belt.position.y = 0.66; g.add(belt);
+  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.19,0.26,0.14,12), trimMat);
+  collar.position.y = 1.24; g.add(collar);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.12,0.16,8), skinMat);
+  neck.position.y = 1.3; g.add(neck);
 
-  // head lives on a pivot so it can nod / bob independently
+  // --- head on a pivot (nods/bobs independently) ---
   const headPivot = new THREE.Group(); headPivot.position.y = HEAD_Y; g.add(headPivot);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.44, 18, 14), bodyMat);
-  head.position.y = 0.2; head.castShadow = true; headPivot.add(head);
-  // rosy cheeks for a cosier face
-  const cheekMat = new THREE.MeshStandardMaterial({ color:0xff9a9a, transparent:true, opacity:0.5, roughness:1 });
-  for (const s of [-1,1]){
-    const ch = new THREE.Mesh(new THREE.SphereGeometry(0.1,10,8), cheekMat);
-    ch.position.set(0.28*s, 0.14, 0.34); ch.scale.set(1,0.7,0.4); headPivot.add(ch);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.4, 20, 16), skinMat);
+  head.position.y = 0.24; head.scale.set(1,1.04,0.96); head.castShadow = true; headPivot.add(head);
+  for(const s of [-1,1]){ // little round ears
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.07,8,8), skinMat);
+    ear.position.set(0.38*s, 0.22, 0.02); ear.scale.z=0.6; headPivot.add(ear);
   }
-  // eyes (parented to head so nods carry them)
-  for (const s of [-1,1]){
-    const e = new THREE.Mesh(new THREE.SphereGeometry(0.08,10,10), eyeMat);
-    e.position.set(0.16*s, 0.24, 0.38); headPivot.add(e); eyes.push(e);
-    const gl = new THREE.Mesh(new THREE.SphereGeometry(0.028,8,8),
-      new THREE.MeshStandardMaterial({ color:0xffffff, emissive:0x666666 }));
-    gl.position.set(0.16*s+0.03, 0.28, 0.44); headPivot.add(gl); // catch-light
+  // rosy cheeks
+  const cheekMat = mat(0xff9a9a, {transparent:true, opacity:0.45, roughness:1});
+  for(const s of [-1,1]){ const ch=new THREE.Mesh(new THREE.SphereGeometry(0.085,10,8),cheekMat);
+    ch.position.set(0.2*s,0.14,0.34); ch.scale.set(1,0.7,0.35); headPivot.add(ch); }
+  // eyes + catch-lights
+  for(const s of [-1,1]){
+    const e=new THREE.Mesh(new THREE.SphereGeometry(0.072,12,12),eyeMat);
+    e.position.set(0.15*s,0.26,0.35); e.scale.z=0.6; headPivot.add(e); eyes.push(e);
+    const gl=new THREE.Mesh(new THREE.SphereGeometry(0.024,8,8), mat(0xffffff,{emissive:0x777777}));
+    gl.position.set(0.15*s+0.03,0.30,0.4); headPivot.add(gl);
+    const brow=new THREE.Mesh(new THREE.BoxGeometry(0.11,0.03,0.03), hairMat);
+    brow.position.set(0.15*s,0.37,0.36); brow.rotation.z=-0.08*s; headPivot.add(brow);
   }
-  // ears / cap vary by kind
-  if (kind==='fox'){
-    for (const s of [-1,1]){
-      const ear = new THREE.Group();
-      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.17,0.38,6), accMat);
-      cone.castShadow = true; ear.add(cone);
-      ear.position.set(0.22*s, 0.56, 0); headPivot.add(ear); ears.push(ear);
-    }
-  } else if (kind==='mush'){
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.55,16,12,0,Math.PI*2,0,Math.PI/2), accMat);
-    cap.position.y = 0.5; cap.scale.y=0.7; cap.castShadow=true; headPivot.add(cap);
-    for(let i=0;i<5;i++){ // pale spots on the cap
-      const spot = new THREE.Mesh(new THREE.CircleGeometry(0.06,10),
-        new THREE.MeshStandardMaterial({ color:0xffeede, side:THREE.DoubleSide }));
-      const a=i/5*Math.PI*2; spot.position.set(Math.cos(a)*0.32,0.62,Math.sin(a)*0.32);
-      spot.lookAt(spot.position.x*3, 3, spot.position.z*3); headPivot.add(spot);
-    }
-  } else if (kind==='frog'){
-    for (const s of [-1,1]){
-      const ear = new THREE.Group();
-      const eb = new THREE.Mesh(new THREE.SphereGeometry(0.17,12,12), bodyMat);
-      eb.castShadow = true; ear.add(eb);
-      const ep = new THREE.Mesh(new THREE.SphereGeometry(0.075,8,8), eyeMat);
-      ep.position.set(0,0.04,0.15); ear.add(ep); eyes.push(ep);
-      ear.position.set(0.2*s, 0.5, 0.02); headPivot.add(ear); ears.push(ear);
+  // nose + smiling mouth
+  const nose=new THREE.Mesh(new THREE.SphereGeometry(0.04,8,8),skinMat);
+  nose.position.set(0,0.18,0.4); nose.scale.set(1,0.8,1.1); headPivot.add(nose);
+  const mouth=new THREE.Mesh(new THREE.TorusGeometry(0.06,0.018,6,10,Math.PI), mat(0x9a5a4a));
+  mouth.position.set(0,0.09,0.37); mouth.rotation.x=Math.PI*0.5; mouth.rotation.z=Math.PI; headPivot.add(mouth);
+  if(o.beard){
+    const beard=new THREE.Mesh(new THREE.ConeGeometry(0.24,0.5,10), mat(0xd8d2c4,{roughness:1}));
+    beard.position.set(0,-0.02,0.24); beard.rotation.x=0.15; headPivot.add(beard);
+  }
+
+  // --- hair ---
+  let tail = null;   // ponytail rides the 'tail' slot so it sways in animateCritter
+  if(o.hairStyle!=='bald'){
+    const cover = o.hairStyle==='bob' ? Math.PI*0.82 : Math.PI*0.6;
+    const capHair = new THREE.Mesh(new THREE.SphereGeometry(0.42,18,14,0,Math.PI*2,0,cover), hairMat);
+    capHair.position.set(0,0.24,-0.02); capHair.castShadow=true; headPivot.add(capHair);
+    const fringe = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.12,0.12), hairMat);
+    fringe.position.set(0,0.44,0.34); fringe.rotation.x=0.3; headPivot.add(fringe);
+    if(o.hairStyle==='ponytail'){
+      tail = new THREE.Group();
+      const p1=new THREE.Mesh(new THREE.CapsuleGeometry(0.1,0.34,5,10),hairMat);
+      p1.position.y=-0.22; p1.castShadow=true; tail.add(p1);
+      tail.position.set(0,0.44,-0.36); tail.rotation.x=-0.4; g.add(tail);
     }
   }
-  // arms — pivoted at the shoulder so they swing
+
+  // --- hat ---
+  if(o.hat!=='none'){
+    const h = new THREE.Group(); h.position.y=0.24;
+    const hatMat = mat(o.hatColor,{roughness:0.9});
+    if(o.hat==='mushroom'){
+      const cap=new THREE.Mesh(new THREE.SphereGeometry(0.5,18,12,0,Math.PI*2,0,Math.PI/2),hatMat);
+      cap.position.y=0.32; cap.scale.y=0.72; cap.castShadow=true; h.add(cap);
+      for(let i=0;i<6;i++){ const sp=new THREE.Mesh(new THREE.CircleGeometry(0.055,10), mat(0xffeede,{side:THREE.DoubleSide}));
+        const a=i/6*Math.PI*2, r=0.3; sp.position.set(Math.cos(a)*r,0.42,Math.sin(a)*r);
+        sp.lookAt(sp.position.x*3,3,sp.position.z*3); h.add(sp); }
+    } else if(o.hat==='wizard'){
+      const brim=new THREE.Mesh(new THREE.ConeGeometry(0.62,0.12,20),hatMat);
+      brim.position.y=0.28; brim.castShadow=true; h.add(brim);
+      const cone=new THREE.Mesh(new THREE.ConeGeometry(0.34,1.0,16),hatMat);
+      cone.position.y=0.82; cone.rotation.z=0.12; cone.castShadow=true; h.add(cone);
+      const star=new THREE.Mesh(new THREE.CircleGeometry(0.08,5), mat(0xffe08a,{emissive:0x8a6a20,side:THREE.DoubleSide}));
+      star.position.set(0,0.85,0.3); h.add(star);
+    } else if(o.hat==='fisher'){
+      const crown=new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.36,0.3,14),hatMat);
+      crown.position.y=0.42; crown.castShadow=true; h.add(crown);
+      const brim=new THREE.Mesh(new THREE.CircleGeometry(0.56,18), hatMat);
+      brim.rotation.x=-Math.PI/2; brim.position.y=0.3; brim.scale.y=0.9; h.add(brim);
+    } else if(o.hat==='cap'){
+      const cap=new THREE.Mesh(new THREE.SphereGeometry(0.42,16,12,0,Math.PI*2,0,Math.PI*0.55),hatMat);
+      cap.position.y=0.34; cap.castShadow=true; h.add(cap);
+      const peak=new THREE.Mesh(new THREE.ConeGeometry(0.12,0.3,10),hatMat);
+      peak.position.set(0,0.72,0.05); peak.rotation.x=0.4; h.add(peak);
+    }
+    headPivot.add(h);
+  }
+
+  // --- arms (shoulder-pivoted, sleeves + hands) ---
   const arms = [];
-  for (const s of [-1,1]){
-    const arm = new THREE.Group();
-    const limb = new THREE.Mesh(new THREE.CapsuleGeometry(0.12,0.28,4,8), bodyMat);
-    limb.position.y = -0.2; limb.castShadow = true; arm.add(limb);
-    arm.position.set(0.44*s, 1.05, 0); g.add(arm); arms.push(arm);
+  for(const s of [-1,1]){
+    const arm=new THREE.Group();
+    const sleeve=new THREE.Mesh(new THREE.CapsuleGeometry(0.1,0.26,5,9),outfitMat);
+    sleeve.position.y=-0.16; sleeve.castShadow=true; arm.add(sleeve);
+    const hand=new THREE.Mesh(new THREE.SphereGeometry(0.1,10,10),skinMat);
+    hand.position.y=-0.36; hand.castShadow=true; arm.add(hand);
+    arm.position.set(0.34*s,1.14,0); g.add(arm); arms.push(arm);
   }
-  // legs — pivoted at the hip
+  // --- legs (hip-pivoted, with boots) ---
   const legs = [];
-  for (const s of [-1,1]){
-    const leg = new THREE.Group();
-    const limb = new THREE.Mesh(new THREE.CapsuleGeometry(0.14,0.28,4,8), accMat);
-    limb.position.y = -0.18; limb.castShadow = true; leg.add(limb);
-    leg.position.set(0.2*s, 0.5, 0); g.add(leg); legs.push(leg);
-  }
-  // fox tail
-  let tail = null;
-  if (kind==='fox'){
-    tail = new THREE.Group();
-    const t1 = new THREE.Mesh(new THREE.CapsuleGeometry(0.16,0.4,5,10), accMat);
-    t1.position.set(0,-0.25,0); t1.castShadow = true; tail.add(t1);
-    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.17,10,10), bodyMat);
-    tip.position.set(0,-0.5,0); tail.add(tip);
-    tail.position.set(0,0.85,-0.42); tail.rotation.x = -0.5; g.add(tail);
+  for(const s of [-1,1]){
+    const leg=new THREE.Group();
+    const shin=new THREE.Mesh(new THREE.CapsuleGeometry(0.12,0.24,5,9), mat(o.boots));
+    shin.position.y=-0.16; shin.castShadow=true; leg.add(shin);
+    const boot=new THREE.Mesh(new THREE.SphereGeometry(0.14,10,10),bootMat);
+    boot.position.set(0,-0.34,0.05); boot.scale.set(1,0.7,1.3); boot.castShadow=true; leg.add(boot);
+    leg.position.set(0.15*s,0.55,0); g.add(leg); legs.push(leg);
   }
 
   g.userData.parts = { body, headPivot, eyes, ears, arms, legs, tail };
@@ -765,7 +804,8 @@ function animateCritter(g, dt, moving, speed){
 }
 
 // ---------- player ----------
-const player = makeCritter(0xffd27a, 0xe08a3a, 'fox');
+const player = makeVillager({ skin:0xf1c39a, hair:0x8a4b26, hairStyle:'short',
+  outfit:0x3f8f5a, trim:0xffe0a0, boots:0x5a3a22, hat:'cap', hatColor:0x2f7a46 });
 player.position.set(0, 0, 6);
 scene.add(player);
 const playerState = { angle: Math.PI, speed: 0, walkPhase: 0 };
@@ -773,7 +813,7 @@ const playerState = { angle: Math.PI, speed: 0, walkPhase: 0 };
 // ---------- villagers ----------
 const villagers = [];
 function addVillager(opts){
-  const v = makeCritter(opts.body, opts.accent, opts.kind);
+  const v = makeVillager(opts.look);
   v.position.set(opts.x, 0, opts.z);
   v.rotation.y = opts.face ?? 0;
   scene.add(v);
@@ -784,7 +824,9 @@ function addVillager(opts){
   });
 }
 addVillager({
-  name:'Pip the Mushroomfolk', body:0xf0e6d0, accent:0xd85a7a, kind:'mush', x:-6, z:2, face:0.4,
+  name:'Pip the Mushroomfolk', x:-6, z:2, face:0.4,
+  look:{ skin:0xf0d0a8, hair:0xc98a3a, hairStyle:'short', outfit:0x7a9a4a, trim:0xe8d8b0,
+         boots:0x6a4a2a, hat:'mushroom', hatColor:0xcf4a3a },
   lines:[
     "Oh! A new face in Evermoor. How lovely.",
     "This glade's been sleepy for ages. It could use a spark of colour…",
@@ -793,7 +835,9 @@ addVillager({
   ]
 });
 addVillager({
-  name:'Bramble the Fox-Mage', body:0xff9a5a, accent:0x9a4a2a, kind:'fox', x:11, z:-1, face:-1.6,
+  name:'Bramble the Fox-Mage', x:11, z:-1, face:-1.6,
+  look:{ skin:0xecc6a0, hair:0xcfc8bc, hairStyle:'bald', beard:true, outfit:0x6a4a9a, trim:0xffd86a,
+         boots:0x3a2a52, hat:'wizard', hatColor:0x513a86 },
   lines:[
     "Careful where you tread — the crystals hum if you listen.",
     "Magic here is mostly chores, honestly. Gather, tidy, plant, repeat.",
@@ -802,7 +846,9 @@ addVillager({
   ]
 });
 addVillager({
-  name:'Dewdrop the Frog', body:0x7fc85a, accent:0x4a8a3a, kind:'frog', x:-13, z:11, face:2.2,
+  name:'Dewdrop the Frog', x:-13, z:11, face:2.2,
+  look:{ skin:0xe8c49a, hair:0x3a2a1a, hairStyle:'ponytail', outfit:0x4aa0a8, trim:0xcfeee0,
+         boots:0x4a6a4a, hat:'fisher', hatColor:0x7a8a4a },
   lines:[
     "*bloop* … oh, hello up there.",
     "I mind the pond. It's cold and it's mine and it's perfect.",
