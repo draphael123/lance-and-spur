@@ -318,6 +318,27 @@ const obstacles = [];  // {x,z,r}
 function addObstacle(x,z,r){ obstacles.push({x,z,r}); }
 const swayers = [];    // canopy nodes that sway in the wind
 
+// ---------- village paths (defined early so grass can avoid them) ----------
+const PATHS = [
+  [[-6,-6],[-3,-4.5],[1,-3],[5,-2.5],[9,-2]],   // links the two cottages
+  [[1,-3],[0.5,1],[0,6]],                        // village centre out to the meadow
+  [[1,-3],[-5,3],[-11,8.5]],                     // toward the pond & Dewdrop
+];
+const PATH_HW = 0.95;
+function distToSeg(px,pz, ax,az, bx,bz){
+  const dx=bx-ax, dz=bz-az, l2=dx*dx+dz*dz;
+  let t = l2>0 ? ((px-ax)*dx+(pz-az)*dz)/l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const cx=ax+dx*t, cz=az+dz*t;
+  return Math.hypot(px-cx, pz-cz);
+}
+function distToPaths(x,z){
+  let m = 1e9;
+  for(const pl of PATHS) for(let i=0;i<pl.length-1;i++)
+    m = Math.min(m, distToSeg(x,z, pl[i][0],pl[i][1], pl[i+1][0],pl[i+1][1]));
+  return m;
+}
+
 // ---------- decorative props: trees, mushrooms, crystals ----------
 function makeTree(x,z,scale=1,opts={}){
   const g = new THREE.Group();
@@ -440,6 +461,7 @@ grass.receiveShadow = true;
     const a=Math.random()*Math.PI*2, d=Math.random()*(WORLD-1);
     const x=Math.cos(a)*d, z=Math.sin(a)*d;
     if(Math.hypot(x+16,z-14)<6.8) continue;   // keep out of the pond
+    if(distToPaths(x,z) < PATH_HW+0.2) continue;  // keep the worn paths clear
     gq.setFromAxisAngle(up, Math.random()*Math.PI*2);
     gs.set(0.85+Math.random()*0.5, 0.75+Math.random()*0.7, 1);
     gm.compose(gp.set(x,0,z), gq, gs);
@@ -787,6 +809,158 @@ addVillager({
     "Drop a lantern near the water sometime? It looks ever so pretty reflected."
   ]
 });
+
+// ============================================================= *
+//  Set dressing — paths, flower beds, well, fences, signpost…
+// ============================================================= *
+
+// --- worn dirt paths (single ribbon geometry each, no z-fighting) ---
+function buildPathGeom(points, hw){
+  const verts=[], idx=[], n=points.length;
+  for(let i=0;i<n;i++){
+    const prev=points[Math.max(0,i-1)], next=points[Math.min(n-1,i+1)];
+    let dx=next[0]-prev[0], dz=next[1]-prev[1];
+    const l=Math.hypot(dx,dz)||1; dx/=l; dz/=l;
+    const px=-dz, pz=dx; // perpendicular
+    verts.push(points[i][0]+px*hw, 0, points[i][1]+pz*hw);
+    verts.push(points[i][0]-px*hw, 0, points[i][1]-pz*hw);
+  }
+  for(let i=0;i<n-1;i++){ const a=i*2; idx.push(a,a+2,a+1, a+1,a+2,a+3); }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(verts,3));
+  g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
+const pathMat = new THREE.MeshStandardMaterial({ color:0x9a7850, roughness:1 });
+for(const pl of PATHS){
+  const pm = new THREE.Mesh(buildPathGeom(pl, PATH_HW), pathMat);
+  pm.position.y = 0.03; pm.receiveShadow = true; scene.add(pm);
+}
+// scattered stepping stones + pebbles along the paths
+const stoneMat = new THREE.MeshStandardMaterial({ color:0xb8b2a4, roughness:1 });
+for(const pl of PATHS){
+  for(let i=0;i<pl.length-1;i++){
+    const steps = 5;
+    for(let s=0;s<steps;s++){
+      if(Math.random()<0.5) continue;
+      const t=(s+0.5)/steps;
+      const x=pl[i][0]+(pl[i+1][0]-pl[i][0])*t, z=pl[i][1]+(pl[i+1][1]-pl[i][1])*t;
+      const st=new THREE.Mesh(new THREE.SphereGeometry(0.12+Math.random()*0.1,6,5), stoneMat);
+      st.position.set(x+(Math.random()-.5)*0.8, 0.05, z+(Math.random()-.5)*0.8);
+      st.scale.y=0.4; st.receiveShadow=true; st.castShadow=true; scene.add(st);
+    }
+  }
+}
+
+// --- decorative flower beds ---
+const FLOWER_COLS = [0xff7ab0,0xffd24a,0x9a7aff,0xff6a5a,0xffffff,0xff9ad0,0x6ad0ff];
+function makeLittleFlower(color){
+  const g=new THREE.Group();
+  const stem=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.03,0.3,4),
+    new THREE.MeshStandardMaterial({color:0x4f9e3e,roughness:1})); stem.position.y=0.15; g.add(stem);
+  const petMat=new THREE.MeshStandardMaterial({color, roughness:0.7, emissive:color, emissiveIntensity:0.05});
+  for(let i=0;i<5;i++){ const p=new THREE.Mesh(new THREE.SphereGeometry(0.06,6,6),petMat);
+    const a=i/5*Math.PI*2; p.position.set(Math.cos(a)*0.07,0.32,Math.sin(a)*0.07); p.scale.set(1,0.5,1); p.castShadow=true; g.add(p); }
+  const mid=new THREE.Mesh(new THREE.SphereGeometry(0.05,6,6),new THREE.MeshStandardMaterial({color:0xffe08a}));
+  mid.position.y=0.33; g.add(mid);
+  return g;
+}
+function makeFlowerBed(cx,cz,count,spread){
+  for(let i=0;i<count;i++){
+    const f=makeLittleFlower(FLOWER_COLS[(Math.random()*FLOWER_COLS.length)|0]);
+    const a=Math.random()*Math.PI*2, d=Math.random()*spread;
+    f.position.set(cx+Math.cos(a)*d, 0, cz+Math.sin(a)*d);
+    f.rotation.y=Math.random()*Math.PI*2; f.scale.setScalar(0.8+Math.random()*0.6);
+    scene.add(f);
+  }
+}
+makeFlowerBed(-8.5,-6.2, 14, 1.6);   // beside the tan cottage
+makeFlowerBed(11.5,-2.5, 12, 1.5);   // beside the blue cottage
+makeFlowerBed(2.6,-1.0, 10, 1.2);    // by the well
+makeFlowerBed(-2,7.5, 9, 1.4);       // at the meadow path mouth
+
+// --- the village well (centre of the paths) ---
+function makeWell(x,z){
+  const g=new THREE.Group();
+  const stoneM=new THREE.MeshStandardMaterial({color:0x9b968c, roughness:1});
+  const woodM=new THREE.MeshStandardMaterial({color:0x6f4a2a, roughness:1});
+  const ring=new THREE.Mesh(new THREE.CylinderGeometry(0.9,0.95,0.9,16,1,true), stoneM);
+  ring.position.y=0.45; ring.castShadow=true; ring.receiveShadow=true; g.add(ring);
+  const lip=new THREE.Mesh(new THREE.TorusGeometry(0.92,0.1,8,20), stoneM);
+  lip.rotation.x=Math.PI/2; lip.position.y=0.9; g.add(lip);
+  const water=new THREE.Mesh(new THREE.CircleGeometry(0.85,16),
+    new THREE.MeshStandardMaterial({color:0x2a5e8a, roughness:0.2, metalness:0.2}));
+  water.rotation.x=-Math.PI/2; water.position.y=0.55; g.add(water);
+  for(const s of [-1,1]){ const post=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,1.7,6),woodM);
+    post.position.set(s*0.8,1.35,0); post.castShadow=true; g.add(post); }
+  const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,1.8,6),woodM);
+  beam.rotation.z=Math.PI/2; beam.position.y=2.15; g.add(beam);
+  const roof=new THREE.Mesh(new THREE.ConeGeometry(1.25,0.7,4),
+    new THREE.MeshStandardMaterial({color:0x8a4b3a,roughness:1}));
+  roof.rotation.y=Math.PI/4; roof.position.y=2.55; roof.castShadow=true; g.add(roof);
+  const bucket=new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.11,0.24,8),woodM);
+  bucket.position.set(0,1.75,0); bucket.castShadow=true; g.add(bucket);
+  g.position.set(x,0,z); scene.add(g); addObstacle(x,z,1.1);
+}
+makeWell(1,-3);
+
+// --- a signpost by the well ---
+(function makeSign(){
+  const woodM=new THREE.MeshStandardMaterial({color:0x7a5230, roughness:1});
+  const g=new THREE.Group();
+  const post=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,2.0,7),woodM);
+  post.position.y=1.0; post.castShadow=true; g.add(post);
+  const board=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.5,0.08),
+    new THREE.MeshStandardMaterial({color:0xc8a86a,roughness:1}));
+  board.position.set(0.35,1.6,0); board.rotation.z=-0.05; board.castShadow=true; g.add(board);
+  g.position.set(3.4,0,-0.6); g.rotation.y=-0.5; scene.add(g); addObstacle(3.4,-0.6,0.5);
+})();
+
+// --- low wooden fences framing the tan cottage garden ---
+function makeFenceRun(ax,az,bx,bz){
+  const woodM=new THREE.MeshStandardMaterial({color:0x6f4a2a, roughness:1});
+  const dx=bx-ax, dz=bz-az, len=Math.hypot(dx,dz), n=Math.max(1,Math.round(len/1.1));
+  const ang=Math.atan2(dz,dx);
+  for(let i=0;i<=n;i++){
+    const t=i/n, x=ax+dx*t, z=az+dz*t;
+    const post=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.7,0.1),woodM);
+    post.position.set(x,0.35,z); post.castShadow=true; scene.add(post);
+    addObstacle(x,z,0.18);
+  }
+  for(const ry of [0.28,0.52]){
+    const rail=new THREE.Mesh(new THREE.BoxGeometry(len,0.06,0.05),woodM);
+    rail.position.set((ax+bx)/2, ry, (az+bz)/2); rail.rotation.y=-ang; rail.castShadow=true; scene.add(rail);
+  }
+}
+makeFenceRun(-10.5,-4.5, -10.5,-9.5);
+makeFenceRun(-10.5,-9.5, -6.5,-11.0);
+
+// --- a mushroom fairy ring in the grass ---
+(function fairyRing(){
+  const capM=new THREE.MeshStandardMaterial({color:0xd0402e, roughness:0.9});
+  const stemM=new THREE.MeshStandardMaterial({color:0xf0e8d8, roughness:1});
+  const cx=-20, cz=6, R=1.7;
+  for(let i=0;i<9;i++){
+    const a=i/9*Math.PI*2, x=cx+Math.cos(a)*R, z=cz+Math.sin(a)*R;
+    const m=new THREE.Group();
+    const stem=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.08,0.28,6),stemM); stem.position.y=0.14; m.add(stem);
+    const cap=new THREE.Mesh(new THREE.SphereGeometry(0.18,10,8,0,Math.PI*2,0,Math.PI/2),capM);
+    cap.position.y=0.28; cap.scale.y=0.7; cap.castShadow=true; m.add(cap);
+    m.position.set(x,0,z); m.scale.setScalar(0.7+Math.random()*0.5); scene.add(m);
+  }
+})();
+
+// --- lily pads on the pond ---
+(function lilyPads(){
+  const padM=new THREE.MeshStandardMaterial({color:0x3f8a4a, roughness:0.8, side:THREE.DoubleSide});
+  for(let i=0;i<6;i++){
+    const a=Math.random()*Math.PI*2, d=Math.random()*4.6;
+    const x=-16+Math.cos(a)*d, z=14+Math.sin(a)*d;
+    const pad=new THREE.Mesh(new THREE.CircleGeometry(0.4+Math.random()*0.25, 14, 0.4, 5.5), padM);
+    pad.rotation.x=-Math.PI/2; pad.rotation.z=Math.random()*Math.PI*2; pad.position.set(x,0.12,z); scene.add(pad);
+    if(Math.random()<0.5){ const fl=makeLittleFlower(0xffd6ea); fl.position.set(x,0.12,z); fl.scale.setScalar(0.7); scene.add(fl); }
+  }
+})();
 
 // ---------- gatherable items in the world ----------
 // kind => {emoji, color, make(), give}
