@@ -11,6 +11,11 @@
   #game { position:fixed; inset:0; }
   canvas { display:block; }
 
+  /* cozy diorama vignette (pure CSS, no render cost) */
+  #vignette { position:fixed; inset:0; z-index:5; pointer-events:none;
+    box-shadow: inset 0 0 200px 40px rgba(20,30,16,.55), inset 0 0 60px 10px rgba(20,30,16,.25);
+    mix-blend-mode:multiply; }
+
   /* ---------- HUD ---------- */
   #hud { position:fixed; inset:0; pointer-events:none; z-index:10; }
   .panel { position:absolute; background:linear-gradient(180deg,rgba(24,30,22,.80),rgba(14,20,14,.86));
@@ -92,6 +97,7 @@
 </head>
 <body>
 <div id="game"></div>
+<div id="vignette"></div>
 
 <div id="hud">
   <div class="panel" id="clock"><div class="big" id="clockTime">8:00</div><div class="sub" id="clockDay">MORNING · DAY 1</div></div>
@@ -143,6 +149,7 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 /* ============================================================= *
@@ -480,48 +487,145 @@ makeHouse(-6, -8, 0.3, 0xd8c48a);
 makeHouse(9, -4, -0.6, 0xbcd0e0);
 
 // ---------- character builder (player + villagers share the look) ----------
+const HEAD_Y = 1.5;
 function makeCritter(bodyColor, accentColor, kind){
   const g = new THREE.Group();
   const bodyMat = new THREE.MeshStandardMaterial({ color:bodyColor, roughness:0.85 });
   const accMat  = new THREE.MeshStandardMaterial({ color:accentColor, roughness:0.7 });
+  const eyeMat  = new THREE.MeshStandardMaterial({ color:0x1a1a1a, roughness:0.4 });
+  const eyes = [], ears = [];
 
   const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.5, 6, 12), bodyMat);
   body.position.y = 0.85; body.castShadow = true; g.add(body);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.44, 16, 12), bodyMat);
-  head.position.y = 1.7; head.castShadow = true; g.add(head);
 
-  // eyes
-  const eyeMat = new THREE.MeshStandardMaterial({ color:0x161616 });
+  // head lives on a pivot so it can nod / bob independently
+  const headPivot = new THREE.Group(); headPivot.position.y = HEAD_Y; g.add(headPivot);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.44, 18, 14), bodyMat);
+  head.position.y = 0.2; head.castShadow = true; headPivot.add(head);
+  // rosy cheeks for a cosier face
+  const cheekMat = new THREE.MeshStandardMaterial({ color:0xff9a9a, transparent:true, opacity:0.5, roughness:1 });
   for (const s of [-1,1]){
-    const e = new THREE.Mesh(new THREE.SphereGeometry(0.075,8,8), eyeMat);
-    e.position.set(0.16*s, 1.74, 0.38); g.add(e);
+    const ch = new THREE.Mesh(new THREE.SphereGeometry(0.1,10,8), cheekMat);
+    ch.position.set(0.28*s, 0.14, 0.34); ch.scale.set(1,0.7,0.4); headPivot.add(ch);
   }
-  // ears vary by kind
+  // eyes (parented to head so nods carry them)
+  for (const s of [-1,1]){
+    const e = new THREE.Mesh(new THREE.SphereGeometry(0.08,10,10), eyeMat);
+    e.position.set(0.16*s, 0.24, 0.38); headPivot.add(e); eyes.push(e);
+    const gl = new THREE.Mesh(new THREE.SphereGeometry(0.028,8,8),
+      new THREE.MeshStandardMaterial({ color:0xffffff, emissive:0x666666 }));
+    gl.position.set(0.16*s+0.03, 0.28, 0.44); headPivot.add(gl); // catch-light
+  }
+  // ears / cap vary by kind
   if (kind==='fox'){
     for (const s of [-1,1]){
-      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.18,0.36,5), accMat);
-      ear.position.set(0.22*s, 2.08, 0); ear.castShadow=true; g.add(ear);
+      const ear = new THREE.Group();
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.17,0.38,6), accMat);
+      cone.castShadow = true; ear.add(cone);
+      ear.position.set(0.22*s, 0.56, 0); headPivot.add(ear); ears.push(ear);
     }
   } else if (kind==='mush'){
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.55,14,10,0,Math.PI*2,0,Math.PI/2), accMat);
-    cap.position.y = 2.0; cap.scale.y=0.7; cap.castShadow=true; g.add(cap);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.55,16,12,0,Math.PI*2,0,Math.PI/2), accMat);
+    cap.position.y = 0.5; cap.scale.y=0.7; cap.castShadow=true; headPivot.add(cap);
+    for(let i=0;i<5;i++){ // pale spots on the cap
+      const spot = new THREE.Mesh(new THREE.CircleGeometry(0.06,10),
+        new THREE.MeshStandardMaterial({ color:0xffeede, side:THREE.DoubleSide }));
+      const a=i/5*Math.PI*2; spot.position.set(Math.cos(a)*0.32,0.62,Math.sin(a)*0.32);
+      spot.lookAt(spot.position.x*3, 3, spot.position.z*3); headPivot.add(spot);
+    }
   } else if (kind==='frog'){
     for (const s of [-1,1]){
-      const eb = new THREE.Mesh(new THREE.SphereGeometry(0.16,10,10), bodyMat);
-      eb.position.set(0.2*s, 2.02, 0.05); g.add(eb);
-      const ep = new THREE.Mesh(new THREE.SphereGeometry(0.07,8,8), eyeMat);
-      ep.position.set(0.2*s, 2.08, 0.18); g.add(ep);
+      const ear = new THREE.Group();
+      const eb = new THREE.Mesh(new THREE.SphereGeometry(0.17,12,12), bodyMat);
+      eb.castShadow = true; ear.add(eb);
+      const ep = new THREE.Mesh(new THREE.SphereGeometry(0.075,8,8), eyeMat);
+      ep.position.set(0,0.04,0.15); ear.add(ep); eyes.push(ep);
+      ear.position.set(0.2*s, 0.5, 0.02); headPivot.add(ear); ears.push(ear);
     }
   }
-  // simple limbs for a bob animation
-  const legMat = accMat;
-  const legL = new THREE.Mesh(new THREE.CapsuleGeometry(0.14,0.3,4,8), legMat);
-  const legR = legL.clone();
-  legL.position.set(-0.2,0.35,0); legR.position.set(0.2,0.35,0);
-  legL.castShadow=legR.castShadow=true; g.add(legL); g.add(legR);
-  g.userData.legs = [legL, legR];
-  g.userData.head = head;
+  // arms — pivoted at the shoulder so they swing
+  const arms = [];
+  for (const s of [-1,1]){
+    const arm = new THREE.Group();
+    const limb = new THREE.Mesh(new THREE.CapsuleGeometry(0.12,0.28,4,8), bodyMat);
+    limb.position.y = -0.2; limb.castShadow = true; arm.add(limb);
+    arm.position.set(0.44*s, 1.05, 0); g.add(arm); arms.push(arm);
+  }
+  // legs — pivoted at the hip
+  const legs = [];
+  for (const s of [-1,1]){
+    const leg = new THREE.Group();
+    const limb = new THREE.Mesh(new THREE.CapsuleGeometry(0.14,0.28,4,8), accMat);
+    limb.position.y = -0.18; limb.castShadow = true; leg.add(limb);
+    leg.position.set(0.2*s, 0.5, 0); g.add(leg); legs.push(leg);
+  }
+  // fox tail
+  let tail = null;
+  if (kind==='fox'){
+    tail = new THREE.Group();
+    const t1 = new THREE.Mesh(new THREE.CapsuleGeometry(0.16,0.4,5,10), accMat);
+    t1.position.set(0,-0.25,0); t1.castShadow = true; tail.add(t1);
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.17,10,10), bodyMat);
+    tip.position.set(0,-0.5,0); tail.add(tip);
+    tail.position.set(0,0.85,-0.42); tail.rotation.x = -0.5; g.add(tail);
+  }
+
+  g.userData.parts = { body, headPivot, eyes, ears, arms, legs, tail };
+  g.userData.anim = { walk:0, breathe:Math.random()*6.28, blinkT:1+Math.random()*3, hop:0, twitch:Math.random()*6 };
+  g.userData.head = headPivot; // back-compat for existing look-at code
   return g;
+}
+
+// unified critter animation: idle breathing, blink, walk cycle, talk-hop
+function animateCritter(g, dt, moving, speed){
+  const a = g.userData.anim, P = g.userData.parts;
+  a.breathe += dt;
+  const breath = Math.sin(a.breathe*2.2)*0.02;
+  if(moving) a.walk += dt*(9 + speed*0.5);
+  const wk = a.walk, stride = moving ? 1 : 0;
+
+  // legs + opposing arms
+  P.legs[0].rotation.x =  Math.sin(wk)*0.7*stride;
+  P.legs[1].rotation.x = -Math.sin(wk)*0.7*stride;
+  P.arms[0].rotation.x = -Math.sin(wk)*0.55*stride;
+  P.arms[1].rotation.x =  Math.sin(wk)*0.55*stride;
+  // idle: arms rest slightly out
+  if(!moving){ P.arms[0].rotation.x = P.arms[1].rotation.x = Math.sin(a.breathe*1.6)*0.05; }
+
+  // vertical bounce + talk hop
+  const bounce = moving ? Math.abs(Math.sin(wk))*0.09 : 0;
+  let hop = 0;
+  if(a.hop>0){ a.hop -= dt; hop = Math.sin(THREE.MathUtils.clamp(1-a.hop/0.45,0,1)*Math.PI)*0.35; }
+  g.position.y = bounce + hop;
+
+  // squash & stretch (volume-preserving): breathe when idle, stretch on hop apex
+  const sq = 1 + breath + hop*0.25 - (moving?Math.abs(Math.cos(wk))*0.03:0);
+  const inv = 1/Math.sqrt(Math.max(sq,0.5));
+  P.body.scale.set(inv, sq, inv);
+
+  // head bob / gentle nod
+  P.headPivot.position.y = HEAD_Y + breath*1.4 + bounce*0.5 + hop*0.9;
+  P.headPivot.rotation.x = moving ? Math.sin(wk*2)*0.05 : Math.sin(a.breathe*1.2)*0.03;
+
+  // forward lean while walking
+  g.rotation.x = moving ? 0.07 : 0;
+
+  // blink
+  a.blinkT -= dt;
+  let eyeSY = 1;
+  if(a.blinkT < 0){
+    const bt = -a.blinkT;
+    if(bt < 0.13) eyeSY = 1 - Math.sin((bt/0.13)*Math.PI);
+    else a.blinkT = 2.5 + Math.random()*4;
+  }
+  for(const e of P.eyes) e.scale.y = Math.max(0.08, eyeSY);
+
+  // ear twitch + tail sway
+  a.twitch += dt;
+  const twitch = Math.sin(a.twitch*0.8)*0.06;
+  if(P.ears[0]) P.ears[0].rotation.z =  twitch;
+  if(P.ears[1]) P.ears[1].rotation.z = -twitch;
+  if(P.tail) P.tail.rotation.z = Math.sin(a.breathe*2.0)*0.18 + Math.sin(wk)*0.25*stride;
 }
 
 // ---------- player ----------
@@ -690,6 +794,7 @@ function openDialogue(v){
   dLine.textContent = v.lines[0];
   dlgEl.style.display = 'block';
   setPrompt(null);
+  v.group.userData.anim.hop = 0.45;   // happy greeting bounce
 }
 function advanceDialogue(){
   if(!dialogue) return;
@@ -950,12 +1055,7 @@ function movePlayer(dt, ix, iz){
   while(da>Math.PI) da-=Math.PI*2; while(da<-Math.PI) da+=Math.PI*2;
   player.rotation.y += da*Math.min(1, dt*12);
 
-  // leg bob
-  const legs = player.userData.legs;
-  const amp = moving ? 0.5 : 0;
-  legs[0].rotation.x = Math.sin(playerState.walkPhase)*amp;
-  legs[1].rotation.x = -Math.sin(playerState.walkPhase)*amp;
-  player.position.y = moving ? Math.abs(Math.sin(playerState.walkPhase))*0.06 : 0;
+  animateCritter(player, dt, moving, playerState.speed);
 }
 
 // ---------- camera follow ----------
@@ -972,8 +1072,7 @@ function updateCamera(dt){
 // ---------- villager idle behaviour ----------
 function updateVillagers(dt){
   for(const v of villagers){
-    v.bob += dt;
-    v.group.userData.head.position.y = 1.7 + Math.sin(v.bob*1.5)*0.03;
+    animateCritter(v.group, dt, false, 0);
     // gentle idle turn toward player when close
     const d = player.position.distanceTo(v.group.position);
     if(d < 4){
@@ -1032,9 +1131,12 @@ if(isTouch){
   document.getElementById('btnB').addEventListener('touchstart', e=>{ e.preventDefault(); if(placeMode){ /* place at player front */ const fx=player.position.x-Math.sin(playerState.angle)*2.2, fz=player.position.z-Math.cos(playerState.angle)*2.2; const kind=HOTBAR_ORDER[activeSlot]; if(inventory[kind]>0){ const mesh=makeItemMesh(kind,false); mesh.position.set(fx,0,fz); mesh.rotation.y=placeRot; scene.add(mesh); placed.push({group:mesh,kind}); inventory[kind]--; refreshHotbar(); toast('Placed '+ITEM_TYPES[kind].emoji);} cancelPlace(); } else tryPlace(); });
 }
 
-// ---------- post-processing: subtle bloom for the magical glow ----------
+// ---------- post-processing: bloom glow + tilt-shift depth-of-field ----------
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
+// gentle DOF gives the glade a cozy hand-held "miniature diorama" feel
+const bokeh = new BokehPass(scene, camera, { focus: 12.0, aperture: 0.0009, maxblur: 0.006 });
+composer.addPass(bokeh);
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.7, 0.82);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
@@ -1077,6 +1179,8 @@ function animate(){
   updateWind(t);
   updateMotes(t);
   waterUniforms.uTime.value = t;
+  // keep the player crisp; blur foreground grass + distant tree ring (tilt-shift)
+  bokeh.uniforms['focus'].value = camera.position.distanceTo(player.position);
 
   // ghost follows pointer while placing
   if(placeMode && placeGhost){
