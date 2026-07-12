@@ -440,6 +440,7 @@ const AudioEng = {
     notes.forEach((f,i)=> setTimeout(()=>this.blip(f,.35,'triangle',.13), i*110));
   },
 };
+window.AudioEng = AudioEng;
 $('muteBtn').addEventListener('pointerdown', e=>{
   e.stopPropagation(); AudioEng.muted=!AudioEng.muted;
   $('muteBtn').textContent = AudioEng.muted?'✕':'♪';
