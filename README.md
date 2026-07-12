@@ -56,31 +56,25 @@ shelf.
 
 ### Audio
 
-All music and SFX are generated in-browser with WebAudio (a plucked generative
-score over Am–F–C–G plus synthesized foley), so the game ships with zero audio
-assets. To use real recordings instead, drop files into `audio/` and list them
-in `audio/manifest.json` — anything listed replaces its synthesized version,
-anything missing falls back automatically:
+The game ships with real audio in `audio/`, loaded via `audio/manifest.json`
+(anything missing from the manifest falls back to the built-in WebAudio
+synthesizer, so the folder is fully optional):
 
-```json
-{
-  "music":   "music.mp3",
-  "squish":  "squish.wav",
-  "scrape":  "scrape.wav",
-  "slosh":   "slosh.wav",
-  "creak":   "creak.wav",
-  "crack":   "crack.wav",
-  "shatter": "shatter.wav",
-  "thud":    "thud.wav",
-  "chime":   "chime.wav"
-}
-```
+- **Music** — *"The River Studio"*, an original 26-second seamless loop
+  (Karplus–Strong plucked strings over Am–F–C–G with Schroeder reverb),
+  rendered offline by `audio/render.js` (dependency-free; re-render with
+  `node audio/render.js`). CC0, as are the rendered `squish` and `shatter`.
+- **Foley** — `chime`, `crack`, `creak`, `scrape`, `slosh`, `thud` are
+  trimmed from the [Sonic Pi](https://github.com/sonic-pi-net/sonic-pi)
+  sample library (`perc_bell`, `perc_snap`, `perc_door`, `ambi_glass_rub`,
+  `ambi_sauna`, `perc_impact1` + `bd_boom`), which is **CC0 / public
+  domain** (originally from freesound.org — see the license note in
+  Sonic Pi's `etc/samples/README.md`).
 
-Good CC0/royalty-free sources: [Kenney audio packs](https://kenney.nl/assets?q=audio)
-(CC0 — the *Impact Sounds* and *UI Audio* packs cover crack/thud/chime well),
-[FreePD](https://freepd.com) (CC0 music), [OpenGameArt](https://opengameart.org)
-(filter by CC0), and [Pixabay SFX](https://pixabay.com/sound-effects/) (check the
-per-file license). `music` should be a seamless loop; everything else is a one-shot.
+To swap any sound, replace its file (or point the manifest at a new one);
+`music` should be a seamless loop, everything else is a one-shot. More CC0
+sources: [Kenney](https://kenney.nl/assets?q=audio), [FreePD](https://freepd.com),
+[OpenGameArt](https://opengameart.org), [Pixabay SFX](https://pixabay.com/sound-effects/).
 
 ## Deploy
 
