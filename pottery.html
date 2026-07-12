@@ -74,6 +74,10 @@
   .formGrid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:16px; width:100%; max-width:340px; }
   .formBtn .fEmoji { font-size:26px; }
   .formBtn .fDesc { font-size:10.5px; opacity:.8; font-weight:normal; margin-top:3px; letter-spacing:.2px; }
+  #orderList { width:100%; max-width:340px; }
+  .orderBtn { width:100%; margin-top:8px; font-size:12.5px; padding:11px 10px; font-weight:normal;
+    letter-spacing:.2px; line-height:1.45; background:linear-gradient(180deg,#4a3a28,#32251a); }
+  .orderBtn b { color:#ffd9a0; }
 
   /* center banner */
   #banner { position:absolute; top:24%; left:50%; transform:translate(-50%,-50%); text-align:center;
@@ -228,6 +232,8 @@
     <h2>What will you make?</h2>
     <div class="tag">pick a form and a guide silhouette appears on the wheel</div>
     <div class="formGrid" id="formGrid"></div>
+    <div class="tag" style="margin-top:16px; letter-spacing:2px;">📌 NOTICEBOARD</div>
+    <div id="orderList"></div>
   </div>
 
   <div class="screen" id="resultScreen">
@@ -632,6 +638,25 @@ let liquid;
   tub.visible = false;
 }
 
+/* the noticeboard (commissions live here in spirit) */
+{
+  const board = new THREE.Mesh(new THREE.BoxGeometry(16,11,.7),
+    new THREE.MeshStandardMaterial({color:0x7a5c38, roughness:.95}));
+  board.position.set(28,21,-54.4); scene.add(board);
+  const frameMat = new THREE.MeshStandardMaterial({color:0x4a3626, roughness:.8});
+  [[0,5.9,17,1.2],[0,-5.9,17,1.2],[-8.6,0,1.2,13],[8.6,0,1.2,13]].forEach(([x,y,w,h])=>{
+    const f=new THREE.Mesh(new THREE.BoxGeometry(w,h,.9), frameMat);
+    f.position.set(28+x,21+y,-54.2); scene.add(f);
+  });
+  for(let i=0;i<3;i++){
+    const note=new THREE.Mesh(new THREE.PlaneGeometry(3.4,4.2),
+      new THREE.MeshStandardMaterial({color:0xe8ddc0, roughness:.9}));
+    note.position.set(23.5+i*4.5+rnd(-.5,.5), 21+rnd(-2,2), -53.9);
+    note.rotation.z=rnd(-.12,.12);
+    scene.add(note);
+  }
+}
+
 /* the shelf */
 const shelfGroup = new THREE.Group(); scene.add(shelfGroup);
 {
@@ -658,8 +683,11 @@ function makePieceMesh(d){
   const n=d.r.length, radial=28;
   const rows=n*2, pos=new Float32Array(rows*radial*3), col=new Float32Array(rows*radial*3);
   const geo=new THREE.BufferGeometry();
-  const glazeC = new THREE.Color(d.glaze);
   const bisqueC = new THREE.Color(d.bisque||0xc9926a);
+  // layer stack (older saves carried a single glaze+frac)
+  const layers = (d.layers || (d.glaze? [{c:d.glaze, frac:d.frac||0}] : []))
+    .map(l=>({cC:new THREE.Color(l.c), frac:l.frac, waxed:!!l.waxed}));
+  const paint = new THREE.Color(), tmp = new THREE.Color();
   const idx=[];
   for(let k=0;k<rows-1;k++) for(let j=0;j<radial;j++){
     const a=k*radial+j, b=k*radial+(j+1)%radial, c=(k+1)*radial+j, e=(k+1)*radial+(j+1)%radial;
@@ -668,14 +696,22 @@ function makePieceMesh(d){
   for(let i=0;i<n;i++){
     const yn=i/(n-1), yy=yn*d.h, rr=d.r[i]+Math.sin(yn*44)*.03;
     const rin=Math.max(rr-(d.t||1),.05), yIn=Math.max(yy,.6);
-    const glazed = yn <= d.frac+.001;
-    const c = glazed? glazeC : bisqueC;
+    let has=false, waxMax=0;
+    for(const L of layers){
+      if(yn > waxMax && yn <= L.frac+.001){
+        if(has){ tmp.copy(L.cC).lerp(paint,.35).multiplyScalar(.96); paint.copy(tmp); }
+        else { paint.copy(L.cC); has=true; }
+      }
+      if(L.waxed && L.frac>waxMax) waxMax=L.frac;
+    }
+    const c = has? paint : bisqueC;
     const pool = 1 - (Math.sin(yn*44)<0? .07*-Math.sin(yn*44) : 0);
     for(let j=0;j<radial;j++){
       const a=j/radial*Math.PI*2, ca=Math.cos(a), sa=Math.sin(a);
-      const s=(.94+Math.sin(j*12.9898+i*.7)*.035)*(glazed?pool:1);
+      const rOut = rr + (d.carve && d.carve!=='none'? carveOffset(d.carve, yn, j/radial) : 0);
+      const s=(.94+Math.sin(j*12.9898+i*.7)*.035)*(has?pool:1);
       let o=(i*radial+j)*3;
-      pos[o]=ca*rr; pos[o+1]=yy; pos[o+2]=sa*rr;
+      pos[o]=ca*rOut; pos[o+1]=yy; pos[o+2]=sa*rOut;
       col[o]=c.r*s; col[o+1]=c.g*s; col[o+2]=c.b*s;
       o=((rows-1-i)*radial+j)*3;
       pos[o]=ca*rin; pos[o+1]=yIn; pos[o+2]=sa*rin;
@@ -707,7 +743,7 @@ function layoutShelf(){
     const old = shelfPieces.pop();
     scene.remove(old.mesh); old.mesh.geometry.dispose(); old.mesh.material.dispose();
   }
-  $('shelfCount').textContent = shelfPieces.length;
+  $('shelfCount').textContent = `${shelfPieces.length} · ${G.coins}c`;
 }
 function saveShelf(){
   localStorage.setItem('mudember_shelf', JSON.stringify(shelfPieces.map(p=>p.data)));
@@ -726,10 +762,10 @@ function addToShelf(){
     h:+pot.h.toFixed(2),
     r:Array.from(pot.r).map(v=>+v.toFixed(2)),
     t:+mean.toFixed(2),
-    glaze:'#'+pot.glazeColor.getHexString(),
+    layers:pot.layers.map(l=>({c:'#'+l.cC.getHexString(), frac:+l.frac.toFixed(2), waxed:!!l.waxed})),
     bisque:'#'+pot.clay.bisqueC.getHexString(),
-    frac:+pot.glazedFrac.toFixed(2),
-    finish:pot.glazeFinish,
+    carve:pot.carve,
+    finish:glazeFinish(),
     kind:classifyPiece(),
   };
   shelfPieces.unshift({data:d, mesh:makePieceMesh(d), jx:rnd(-.6,.6), jr:rnd(Math.PI*2)});
@@ -778,12 +814,16 @@ function rollDrips(){
   }
 }
 function ringOfRow(k){ return k<RINGS ? k : ROWS-1-k; }
-/* vertex-color repaint: bisque base, glaze with pooling in the throwing
-   valleys, jittered dip line, and darker drip streaks running from it */
+/* vertex-color repaint: bisque base, then the glaze layer stack.
+   Later dips paint over earlier ones (with a blended tint where they
+   overlap) — unless the earlier layer was WAXED, which protects it.
+   Pooling darkens the throwing valleys; the top dip line is jittered
+   with darker drip streaks running from it. */
+const _paintA = new THREE.Color(), _paintB = new THREE.Color();
+function glazeFinish(){ return pot.layers.length? pot.layers[pot.layers.length-1].f : 'gloss'; }
 function repaintColors(){
   const col = potGeo.attributes.color.array;
-  const glazeC = pot.glazeColor;
-  const speckly = pot.glazeFinish==='speckle';
+  const speckly = glazeFinish()==='speckle';
   for(let k=0;k<ROWS;k++){
     const ring = ringOfRow(k);
     const yn = ring/(RINGS-1);
@@ -792,19 +832,24 @@ function repaintColors(){
     for(let j=0;j<RADIAL;j++){
       const v=k*RADIAL+j;
       let s=speckle[v];
-      let c=null;
-      if(pot.bisqued){
-        const boundary = pot.glazedFrac + edgeJit[j];
-        const glazed = glazeC && yn <= boundary+.001;
-        if(glazed){
-          c=glazeC;
-          s*=pool;
-          if(dripLen[j]>0 && yn > boundary-dripLen[j]) s*=.86;   // drip streak
-          if(speckly) s*= .88 + Math.sin(v*7.31)*.5*.2;
-        } else c=pot.clay.bisqueC;
+      if(!pot.bisqued){ col[v*3]=s; col[v*3+1]=s; col[v*3+2]=s; continue; }
+      let has=false, waxMax=0, topB=0;
+      for(const L of pot.layers){
+        const bound = L.frac + edgeJit[j];
+        if(yn > waxMax && yn <= bound){
+          if(has){ _paintB.copy(L.cC).lerp(_paintA,.35).multiplyScalar(.96); _paintA.copy(_paintB); }
+          else { _paintA.copy(L.cC); has=true; }
+          if(bound>topB) topB=bound;
+        }
+        if(L.waxed && L.frac>waxMax) waxMax=L.frac;
       }
-      if(c){ col[v*3]=c.r*s; col[v*3+1]=c.g*s; col[v*3+2]=c.b*s; }
-      else { col[v*3]=s; col[v*3+1]=s; col[v*3+2]=s; }
+      const c = has? _paintA : pot.clay.bisqueC;
+      if(has){
+        s*=pool;
+        if(dripLen[j]>0 && yn>topB-dripLen[j] && yn<=topB) s*=.86;
+        if(speckly) s*= .88 + Math.sin(v*7.31)*.5*.2;
+      }
+      col[v*3]=c.r*s; col[v*3+1]=c.g*s; col[v*3+2]=c.b*s;
     }
   }
   potGeo.attributes.color.needsUpdate = true;
@@ -907,7 +952,9 @@ const pot = {
   bubbles:0, offCenter:1,
   clay:CLAYS[0],
   bisqued:false, bisqueCracked:false,
-  glazeColor:null, glazeName:'', glazeFinish:'gloss', glazedFrac:0, glazeThk:0,
+  carve:'none',
+  layers:[],                                  // glaze dips, in order: {c,n,f,frac,thk,waxed}
+  activeGlaze:null, glazedFrac:0, glazeThk:0,
   y:0,
 };
 window.pot = pot;
@@ -923,7 +970,8 @@ function newLump(){
   pot.instab=0; pot.wobAmp=0; pot.overT=0;
   pot.bubbles = 4+Math.floor(rnd(3)); pot.offCenter=1;
   pot.bisqued=false; pot.bisqueCracked=false;
-  pot.glazeColor=null; pot.glazeName=''; pot.glazeFinish='gloss'; pot.glazedFrac=0; pot.glazeThk=0; pot.y=0;
+  pot.carve='none';
+  pot.layers=[]; pot.activeGlaze=null; pot.glazedFrac=0; pot.glazeThk=0; pot.y=0;
   potRoot.position.set(0,0,0);
   rollDrips();
   clayMat.color.copy(pot.clay.wetC); clayMat.roughness=.5; clayMat.clearcoat=.45; clayMat.emissiveIntensity=0;
@@ -956,11 +1004,13 @@ function rebuildPot(){
     if(i===RINGS-1) rin += lip*.28;                   // ...and the inner edge out
     let yIn = Math.max(yy, floorY+pot.y);
     if(i===RINGS-1) yIn = yy + lip*.22;               // slight dome on the lip
+    const carved = pot.carve!=='none' && !pot.collapsed;
     for(let j=0;j<RADIAL;j++){
       const a = j/RADIAL*Math.PI*2 + spin;
       const ca=Math.cos(a), sa=Math.sin(a);
+      const rOut = carved? rr + carveOffset(pot.carve, yn, j/RADIAL) : rr;
       let o = (i*RADIAL+j)*3;
-      pos[o]=cx+ca*rr; pos[o+1]=yy; pos[o+2]=cz+sa*rr;
+      pos[o]=cx+ca*rOut; pos[o+1]=yy; pos[o+2]=cz+sa*rOut;
       o = ((ROWS-1-i)*RADIAL+j)*3;
       pos[o]=cx+ca*rin; pos[o+1]=yIn; pos[o+2]=cz+sa*rin;
     }
@@ -1005,7 +1055,22 @@ function startCollapse(){
   AudioEng.thud();
   banner('IT COLLAPSED!', 1.8, true);
   guide('<b>SCRAP</b> it — or <b>BISQUE THE BLOB</b> (collectors are strange)');
+  $('chipRow').style.display='none';
   updateButtons();
+}
+
+/* ---------------- carving patterns (leather-hard decoration) ---------------- */
+const CARVES = [
+  {key:'none',    n:'None',    sym:'✖'},
+  {key:'rings',   n:'Rings',   sym:'☰'},
+  {key:'wave',    n:'Wave',    sym:'〰'},
+  {key:'chatter', n:'Chatter', sym:'᎒᎒'},
+];
+function carveOffset(carve, yn, jn){
+  if(carve==='rings')   return -.11*Math.pow(Math.max(0,Math.sin(yn*34)),8);
+  if(carve==='wave')    return  .09*Math.sin(yn*18 + jn*Math.PI*6);
+  if(carve==='chatter') return -.07*Math.abs(Math.sin(jn*Math.PI*14))*Math.max(0,Math.sin(yn*26));
+  return 0;
 }
 
 /* ---------------- forms you can set out to make ---------------- */
@@ -1083,8 +1148,33 @@ const G = {
   state:'title', prevState:'title',
   kilnT:0, kilnKind:'bisque', kilnOutcome:null, kilnApplied:false,
   fired: +(localStorage.getItem('mudember_fired')||0),
+  coins: +(localStorage.getItem('mudember_coins')||0),
+  commission:null,
 };
 window.G = G;
+
+/* ---------------- commissions (the noticeboard) ---------------- */
+const ORDER_CUSTOMERS = [
+  ['🧙','Master Oleander'],['🦊','Bramble the Fox-Mage'],['🐸','Dewdrop'],
+  ['👵','Granny Wren'],['🌙','The Night Abbot'],['⚔️','Sir Aldous'],['🍄','Pip'],
+];
+let orders=[];
+function genOrder(){
+  const f = pick(FORMS.filter(x=>x.key!=='free'));
+  const wantGlaze = Math.random()<.6 ? pick(GLAZES).n : null;
+  const minMatch = 55 + Math.floor(rnd(4))*5;                 // 55–70%
+  const pay = Math.round((30 + minMatch*.9 + (wantGlaze?18:0) + f.h)/5)*5;
+  return { cust:pick(ORDER_CUSTOMERS), form:f.key, glaze:wantGlaze, minMatch, pay };
+}
+function loadOrders(){
+  try{ orders = JSON.parse(localStorage.getItem('mudember_orders')||'[]'); }catch(e){ orders=[]; }
+  orders = orders.filter(o=>o && FORMS.some(f=>f.key===o.form));
+  while(orders.length<2) orders.push(genOrder());
+  saveOrders();
+}
+function saveOrders(){ localStorage.setItem('mudember_orders', JSON.stringify(orders)); }
+function saveCoins(){ localStorage.setItem('mudember_coins', G.coins); }
+function coinHUD(){ $('shelfCount').textContent = `${shelfPieces.length} · ${G.coins}c`; }
 
 /* kiln cinematic timeline (seconds) */
 const KT = { travel:1.1, doorShut:1.8, heatEnd:5.2, doorOpen:5.9, done:7.0 };
@@ -1110,7 +1200,8 @@ function glazeRisks(){
   const uneven = clamp((wallVariance()-.35)*.15,0,.12);
   const cracks = Math.min(pot.cracks*.035,.2);
   const heavy = clamp((pot.glazeThk-5)*.06,0,.28);
-  const total = clamp((thin+uneven+cracks+heavy+.02)*diff().risk, .02, .9);
+  const carved = pot.carve!=='none'? .02:0;   // carving thins the wall a touch
+  const total = clamp((thin+uneven+cracks+heavy+carved+.02)*diff().risk, .02, .9);
   let why='looking safe';
   const worst = Math.max(thin,uneven,cracks,heavy);
   if(worst>.07) why = worst===heavy?'heavy glaze may run' : worst===thin?'walls very thin'
@@ -1203,6 +1294,9 @@ function showClayChips(){
 function showGlazeChips(){
   const row=$('chipRow'); row.innerHTML=''; row.style.display='flex';
   const opts=[]; while(opts.length<3){ const g=pick(GLAZES); if(!opts.includes(g)) opts.push(g); }
+  // a commission may demand a specific glaze — make sure it's on offer
+  if(G.commission && G.commission.glaze && !opts.some(g=>g.n===G.commission.glaze))
+    opts[2] = GLAZES.find(g=>g.n===G.commission.glaze) || opts[2];
   opts.forEach((g,i)=>{
     const wrap=document.createElement('div'); wrap.className='chipWrap';
     const el=document.createElement('button'); el.className='chip'+(i===0?' on':'');
@@ -1216,7 +1310,40 @@ function showGlazeChips(){
     const lbl=document.createElement('div'); lbl.className='chipLbl'; lbl.textContent=g.n;
     wrap.appendChild(el); wrap.appendChild(lbl); row.appendChild(wrap);
   });
+  // wax resist: protects already-dipped glaze from later dips
+  {
+    const wrap=document.createElement('div'); wrap.className='chipWrap';
+    const el=document.createElement('button'); el.className='chip';
+    el.style.background='linear-gradient(180deg,#f4e8c8,#c8b890)';
+    el.textContent='🕯️';
+    el.onclick = ()=>{
+      if(!pot.layers.length){ banner('nothing to wax yet — dip first', 1.4); return; }
+      pot.layers.forEach(l=>l.waxed=true);
+      AudioEng.blip(420,.14,'triangle',.1);
+      banner('🕯️ waxed — covered glaze is protected', 1.6);
+    };
+    const lbl=document.createElement('div'); lbl.className='chipLbl'; lbl.textContent='Wax';
+    wrap.appendChild(el); wrap.appendChild(lbl); row.appendChild(wrap);
+  }
   setGlazeColor(opts[0]);
+}
+function showCarveChips(){
+  const row=$('chipRow'); row.innerHTML=''; row.style.display='flex';
+  CARVES.forEach(cv=>{
+    const wrap=document.createElement('div'); wrap.className='chipWrap';
+    const el=document.createElement('button'); el.className='chip'+(pot.carve===cv.key?' on':'');
+    el.style.background='#4a3626'; el.textContent=cv.sym;
+    el.onclick = ()=>{
+      pot.carve=cv.key;
+      row.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
+      el.classList.add('on');
+      if(cv.key!=='none'){ AudioEng.scrape(); banner('🔪 carved: '+cv.n, 1.2);
+        for(let k=0;k<5;k++) emitSplat(rnd(pot.h), pot.r[Math.floor(rnd(RINGS))]+.3); }
+      else banner('smoothed back', 1);
+    };
+    const lbl=document.createElement('div'); lbl.className='chipLbl'; lbl.textContent=cv.n;
+    wrap.appendChild(el); wrap.appendChild(lbl); row.appendChild(wrap);
+  });
 }
 
 /* ---------------- intro ---------------- */
@@ -1283,6 +1410,7 @@ function refreshStageHUD(){
   $('meters').style.display = G.state==='throwing'?'block':'none';
   if(G.state==='wedge') showClayChips();
   else if(G.state==='glazeDip') $('chipRow').style.display='flex';
+  else if(G.state==='throwing' && pot.moisture<=.55 && !pot.collapsed) showCarveChips();
   else $('chipRow').style.display='none';
   updateButtons();
   setStage($('stageSub').textContent);
@@ -1295,6 +1423,7 @@ function enterStudio(){
 }
 function toPlan(){
   G.state='plan';
+  G.commission=null;
   setPlayHUD(false); $('muteBtn').style.display='flex';
   tub.visible=false; potMesh.visible=true; baseCap.visible=true;
   setCam(0,15,46, 0,9,0);
@@ -1309,6 +1438,24 @@ function toPlan(){
       toWedge();
     };
     grid.appendChild(el);
+  });
+  // the noticeboard: optional commissions for coin
+  const list=$('orderList'); list.innerHTML='';
+  orders.forEach(o=>{
+    const f=FORMS.find(x=>x.key===o.form);
+    const el=document.createElement('button'); el.className='btn orderBtn';
+    el.innerHTML = `${o.cust[0]} <b>${o.cust[1]}</b> wants a ${f.n.toUpperCase()}` +
+      (o.glaze? ` in <b>${o.glaze}</b>`:'') +
+      ` · ≥${o.minMatch}% match · <span style="color:#ffcf6a">${o.pay}c</span>`;
+    el.onclick=()=>{
+      G.commission=o;
+      G.form=f;
+      buildGhost(f);
+      AudioEng.blip(660,.1,'triangle',.1);
+      banner(`commission accepted — ${o.pay}c on delivery`, 1.8);
+      toWedge();
+    };
+    list.appendChild(el);
   });
   showScreen('planScreen');
 }
@@ -1395,6 +1542,7 @@ function applyBisque(){
 }
 function toGlazeDip(){
   G.state='glazeDip';
+  G._dipLayer=null;
   potRoot.position.set(0,0,0);
   refreshStageHUD();
   tub.visible=true;
@@ -1402,16 +1550,18 @@ function toGlazeDip(){
   setStage('coverage 0%');
   setCam(0,18,46, 0,11,0);
   AudioEng.hum(.15);
-  guide('<b>DRAG ↓</b> to dip into the glaze · release to lift');
-  hint('Deeper = more coverage. Longer = thicker coat (heavy coats run!).<br>Pick a colour below.', 7);
+  guide('<b>DRAG ↓</b> to dip · pick a new colour to layer · <b>🕯️ WAX</b> protects covered glaze');
+  hint('Deeper = more coverage. Longer = thicker coat (heavy coats run!).<br>Dip, wax, switch colour, dip again for two-tone.', 8);
   showGlazeChips();
 }
 function setGlazeColor(g){
-  pot.glazeName=g.n;
-  pot.glazeFinish=g.f;
-  pot.glazeColor=new THREE.Color(g.c);
+  pot.activeGlaze = g;
   liquid.material.color.set(g.c);
-  if(pot.glazedFrac>0) repaintColors();
+}
+function glazeNames(){
+  const seen=[];
+  pot.layers.forEach(l=>{ if(!seen.includes(l.n)) seen.push(l.n); });
+  return seen.join(' + ') || '—';
 }
 function applyGlazeFire(){
   const risks=glazeRisks();
@@ -1421,7 +1571,7 @@ function applyGlazeFire(){
     if(ran){
       showResult('🫠 THE GLAZE RAN',
         'The coat was too heavy. It melted down the walls and welded the piece to the kiln shelf. You chisel it free in three sad pieces.',
-        [['Piece','a '+kind],['Glaze', pot.glazeName+' · heavy coat'],['Glaze fire','fused to the shelf'],['Shelf','unchanged']]);
+        [['Piece','a '+kind],['Glaze', glazeNames()+' · heavy coat'],['Glaze fire','fused to the shelf'],['Shelf','unchanged']]);
       potMesh.visible=false; baseCap.visible=false; crackSprite.visible=false;
       AudioEng.crack(); AudioEng.thud();
     } else {
@@ -1429,16 +1579,19 @@ function applyGlazeFire(){
       AudioEng.shatter();
       showResult('💥 SPLIT IN THE GLAZE FIRE!',
         'A flaw that survived the bisque gave way in the hotter fire. The kiln keeps what it kills.',
-        [['Piece','a '+kind],['Glaze', pot.glazeName],['Glaze fire','shattered'],['Shelf','unchanged']]);
+        [['Piece','a '+kind],['Glaze', glazeNames()],['Glaze fire','shattered'],['Shelf','unchanged']]);
     }
     return;
   }
   const cracked = G.kilnOutcome==='crack';
   const cov = Math.round(pot.glazedFrac*100);
   const coat = pot.glazeThk>5?'heavy':pot.glazeThk>1.5?'good':'thin';
-  pot.glazeColor.offsetHSL(rnd(-.02,.02), rnd(-.06,.06), rnd(-.03,.03));
-  if(pot.clay.key==='porcelain') pot.glazeColor.offsetHSL(0,.04,.05);   // porcelain makes glazes sing
-  const fin=pot.glazeFinish;
+  // the kiln develops each layer's colour a little differently every time
+  pot.layers.forEach(l=>{
+    l.cC.offsetHSL(rnd(-.02,.02), rnd(-.06,.06), rnd(-.03,.03));
+    if(pot.clay.key==='porcelain') l.cC.offsetHSL(0,.04,.05);   // porcelain makes glazes sing
+  });
+  const fin=glazeFinish();
   clayMat.roughness = fin==='gloss'?.14:fin==='satin'?.4:.6;
   clayMat.clearcoat = fin==='gloss'?.85:fin==='satin'?.35:.1;
   clayMat.clearcoatRoughness=.18;
@@ -1466,11 +1619,32 @@ function applyGlazeFire(){
   const rows=[['Piece','a '+kind],
     ...(G.form && G.form.key!=='free' && !pot.collapsed ? [['Sketch', `${G.form.n} · ${Math.round(matchPct())}%`]] : []),
     ['Clay', pot.clay.n],
+    ...(pot.carve!=='none' ? [['Decoration', CARVES.find(c=>c.key===pot.carve).n+'-carved']] : []),
     ['Bisque', pot.bisqueCracked?'hairline crack':'clean'],
-    ['Glaze', pot.glazeName+' · '+cov+'%'],
+    ['Glaze', glazeNames()+' · '+cov+'%'],
     ['Coat', coat],
     ['Walls', wallReport()],
     ['Glaze fire', cracked?'cracked but standing':flawless?'flawless':'survived']];
+  /* commission delivery */
+  if(G.commission){
+    const o=G.commission;
+    const m=Math.round(matchPct());
+    const glazeOK = !o.glaze || pot.layers.some(l=>l.n===o.glaze && l.frac>=.4);
+    if(!pot.collapsed && m>=o.minMatch && glazeOK){
+      G.coins += o.pay; saveCoins();
+      rows.push(['Commission', `fulfilled! +${o.pay}c`]);
+      flavor = `${o.cust[1]} pays up, delighted. ` + flavor;
+      const idx=orders.indexOf(o);
+      if(idx>=0) orders.splice(idx,1);
+      orders.push(genOrder()); saveOrders();
+      AudioEng.chime(1.2);
+    } else {
+      rows.push(['Commission', pot.collapsed? 'not this… — still posted'
+        : !glazeOK? `wanted ${o.glaze} — still posted`
+        : `needs ≥${o.minMatch}% match (got ${m}%) — still posted`]);
+    }
+    G.commission=null;
+  }
   G.fired++; localStorage.setItem('mudember_fired', G.fired);
   addToShelf();
   rows.push(['Shelf', shelfPieces.length+' piece'+(shelfPieces.length>1?'s':'')]);
@@ -1564,6 +1738,7 @@ function potScreenY(worldY){
 renderer.domElement.addEventListener('pointerdown', e=>{
   AudioEng.init(); AudioEng.resume();
   touching=true; lastX=e.clientX; lastY=e.clientY;
+  if(G.state==='glazeDip') G._dipLayer=null;      // new dip session
   if(G.state==='wedge'){
     wedgeAnim=1;
     if(pot.bubbles>0){
@@ -1680,7 +1855,8 @@ function tick(now){
       clayMat.roughness = lerp(.5,.85,1-pot.moisture);
       const leather = pot.moisture<=.55;
       if(leather!==wasLeather){ wasLeather=leather; updateButtons();
-        if(leather) banner('leather-hard — you can trim now', 1.8); }
+        if(leather){ banner('leather-hard — you can trim & carve now', 1.8); showCarveChips(); }
+        else $('chipRow').style.display='none'; }
       if(pot.moisture>.5 && Math.random()<dt*2.2) emitWisp();
     }
     const inst = pot.collapsed? 0 : computeInstability();
@@ -1717,15 +1893,30 @@ function tick(now){
   if(G.state==='glazeDip'){
     if(!touching) pot.y = lerp(pot.y, 14, 1-Math.exp(-dt*4));
     const submerged = clamp((LIQ_Y - pot.y)/pot.h, 0, 1);
-    if(submerged>0){
-      if(submerged > pot.glazedFrac){ pot.glazedFrac=submerged; repaintColors(); }
+    if(submerged>0 && pot.activeGlaze){
+      // each dip session lays a fresh layer of the active glaze
+      if(!G._dipLayer){
+        if(pot.layers.length>=4) G._dipLayer = pot.layers[pot.layers.length-1];
+        else {
+          G._dipLayer = { n:pot.activeGlaze.n, f:pot.activeGlaze.f,
+            cC:new THREE.Color(pot.activeGlaze.c), frac:0, thk:0, waxed:false };
+          pot.layers.push(G._dipLayer);
+        }
+      }
+      if(submerged > G._dipLayer.frac){
+        G._dipLayer.frac = submerged;
+        pot.glazedFrac = Math.max(pot.glazedFrac, submerged);
+        repaintColors();
+      }
+      G._dipLayer.thk += dt*2;
       pot.glazeThk += dt*2;
       if(Math.random()<.1) AudioEng.slosh();
       liquid.scale.setScalar(1+Math.sin(now*.01)*.01);
     }
     const cov=Math.round(pot.glazedFrac*100);
     const coat = pot.glazeThk>5?'heavy!':pot.glazeThk>1.5?'good':'thin';
-    setStage(`coverage ${cov}% · coat: ${coat}`);
+    const nLayers = pot.layers.length;
+    setStage(`coverage ${cov}% · coat: ${coat}${nLayers>1? ` · ${nLayers} layers`:''}`);
     const risk=glazeRisks();
     const rt=$('riskTag');
     if(rt) rt.textContent = `glaze risk ${Math.round(risk.total*100)}% — ${risk.why}`;
@@ -1852,8 +2043,9 @@ function tick(now){
 }
 
 /* ---------------- boot ---------------- */
+loadOrders();
 loadShelf();
-$('firedTag').textContent = G.fired>0? `${G.fired} pieces fired in this studio` : '';
+$('firedTag').textContent = G.fired>0? `${G.fired} pieces fired · ${G.coins}c earned` : '';
 showScreen('titleScreen');
 $('muteBtn').style.display='flex';
 requestAnimationFrame(tick);
