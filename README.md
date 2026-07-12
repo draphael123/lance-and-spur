@@ -39,8 +39,14 @@ clay dries while you fuss — trim at leather-hard, survive the bisque fire, dip
 in glaze, then gamble everything on the glaze fire. Survivors go on the studio
 shelf.
 
+- Pick what to make (cup/bowl/vase/jug/amphora or freeform) — a guide silhouette
+  appears on the wheel and your sketch match is scored
 - **Tap** to wedge · **hold** to centre · **drag sideways** to shape · **drag up** at the rim to pull taller
 - **Sponge** re-wets (soft clay slumps) · **trim** evens walls · both kiln passes roll real risk from your shortcuts
+- A brick kiln in the corner with a full firing cinematic (door, peephole glow, spark reveal)
+- Three clay bodies (stoneware and porcelain unlock as you fire pieces), glaze finishes
+  (gloss/satin/speckled) with pooling and drips, photo mode with PNG export
+- The shelf is **persistent** — fired survivors are still there next visit
 - Settings menu (volume, graphics, clay forgiveness, camera sway), skippable intro
 - Same single-file Three.js setup — see `pottery.html`.
 

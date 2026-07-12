@@ -36,12 +36,15 @@
   #moistFill { background:linear-gradient(90deg,#7a4a2c,#3f8fd0,#7ec8ff); width:100%; }
   #stabFill  { background:linear-gradient(90deg,#3ad07a,#ffd24a,#ff5a3a); width:5%; }
 
-  /* glaze color chips */
-  #glazeChips { position:absolute; bottom:calc(104px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
-    display:none; gap:10px; }
+  /* selection chips (clay bodies at wedge, glazes at dip) */
+  #chipRow { position:absolute; bottom:calc(104px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
+    display:none; gap:12px; }
+  .chipWrap { display:flex; flex-direction:column; align-items:center; gap:4px; pointer-events:auto; }
   .chip { pointer-events:auto; width:52px; height:52px; border-radius:50%; border:3px solid rgba(255,255,255,.3);
-    box-shadow:0 4px 12px rgba(0,0,0,.5), inset 0 -8px 12px rgba(0,0,0,.35), inset 0 5px 9px rgba(255,255,255,.35); }
+    box-shadow:0 4px 12px rgba(0,0,0,.5), inset 0 -8px 12px rgba(0,0,0,.35), inset 0 5px 9px rgba(255,255,255,.35);
+    font-size:20px; color:#fff; text-shadow:0 1px 3px #000; }
   .chip.on { border-color:#ffd9a0; transform:scale(1.12); }
+  .chipLbl { font-size:10px; letter-spacing:.5px; text-shadow:0 1px 3px #000; opacity:.9; }
 
   /* action buttons */
   #actions { position:absolute; bottom:calc(14px + env(safe-area-inset-bottom)); left:10px; right:10px; display:none; gap:9px; pointer-events:none; }
@@ -56,6 +59,21 @@
   #fireBtn.hot { border-color:#ff6a4a; color:#ffb09a; }
   .btn .sub { display:block; font-size:10px; font-weight:normal; opacity:.85; margin-top:2px; }
   .btn[disabled] { opacity:.45; }
+
+  /* photo mode bar */
+  #photoBar { position:absolute; bottom:calc(14px + env(safe-area-inset-bottom)); left:10px; right:10px; display:none; gap:9px; pointer-events:none; }
+
+  /* persistent "what to do" guide */
+  #guideBar { position:absolute; top:calc(72px + env(safe-area-inset-top)); left:50%; transform:translateX(-50%);
+    display:none; font-size:12.5px; background:rgba(20,12,10,.72); border:1.5px solid rgba(190,120,80,.5);
+    border-radius:20px; padding:7px 16px; color:#ffe9c8; text-align:center; letter-spacing:.3px;
+    max-width:min(78%, 340px); line-height:1.45; pointer-events:none; }
+  #guideBar b { color:#ffd27a; }
+
+  /* form picker */
+  .formGrid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:16px; width:100%; max-width:340px; }
+  .formBtn .fEmoji { font-size:26px; }
+  .formBtn .fDesc { font-size:10.5px; opacity:.8; font-weight:normal; margin-top:3px; letter-spacing:.2px; }
 
   /* center banner */
   #banner { position:absolute; top:24%; left:50%; transform:translate(-50%,-50%); text-align:center;
@@ -78,6 +96,8 @@
   .screen .bigBtn { margin-top:16px; font-size:17px; padding:14px 30px; min-width:230px; }
   .rows { text-align:left; font-size:14px; line-height:1.9; }
   .rows b { float:right; color:#ffcf6a; }
+  #resBtns { display:flex; gap:10px; margin-top:16px; }
+  #resBtns .btn { font-size:15px; padding:13px 18px; }
 
   /* intro */
   #introScreen .cardInner { min-height:190px; display:flex; align-items:center; justify-content:center; }
@@ -131,7 +151,7 @@
     </div>
   </div>
 
-  <div id="glazeChips"></div>
+  <div id="chipRow"></div>
 
   <div id="actions">
     <button class="btn" id="scrapBtn">SCRAP<span class="sub">fresh clay</span></button>
@@ -139,6 +159,12 @@
     <button class="btn" id="fireBtn">BISQUE FIRE 🔥<span class="risk" id="riskTag">kiln risk —</span></button>
   </div>
 
+  <div id="photoBar">
+    <button class="btn" id="photoBack" style="flex:1">← BACK</button>
+    <button class="btn" id="photoSave" style="flex:2">💾 SAVE PHOTO</button>
+  </div>
+
+  <div id="guideBar"></div>
   <div id="banner"></div>
   <div id="hint"></div>
 
@@ -198,13 +224,22 @@
     <button class="btn bigBtn" id="setDone">DONE</button>
   </div>
 
+  <div class="screen" id="planScreen">
+    <h2>What will you make?</h2>
+    <div class="tag">pick a form and a guide silhouette appears on the wheel</div>
+    <div class="formGrid" id="formGrid"></div>
+  </div>
+
   <div class="screen" id="resultScreen">
     <h2 id="resTitle">Fired!</h2>
     <div class="cardInner">
       <div style="font-size:15px;line-height:1.6" id="resFlavor"></div>
       <div class="rows" id="resRows" style="margin-top:12px;"></div>
     </div>
-    <button class="btn bigBtn" id="nextBtn">BACK TO THE WHEEL →</button>
+    <div id="resBtns">
+      <button class="btn" id="photoBtn">📸 PHOTO</button>
+      <button class="btn" id="nextBtn">BACK TO THE WHEEL →</button>
+    </div>
   </div>
 </div>
 
@@ -223,18 +258,14 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 /* ============================================================
    Mud & Ember — a free-build pottery studio with the full
-   production pipeline:
-     1 wedge  →  2 centre  →  3 throw & dry (trim at leather-
-     hard)  →  4 bisque fire  →  5 dip-glaze  →  6 glaze fire
-   The tension is the material itself: skipped wedging leaves
-   air bubbles, poor centring wobbles forever, thin walls
-   collapse, clay dries as you fuss, and both kiln passes
-   gamble with everything you gave them.
+   production pipeline: wedge → centre → throw & dry (trim at
+   leather-hard) → bisque fire → dip-glaze → glaze fire.
+   Survivors live on the shelf — permanently.
    ============================================================ */
 
-const RINGS  = 40;      // vertical profile samples
-const RADIAL = 56;      // segments around the wheel
-const MAX_H  = 24;      // cm
+const RINGS  = 40;
+const RADIAL = 56;
+const MAX_H  = 24;
 const MIN_H  = 5;
 
 const $ = id => document.getElementById(id);
@@ -254,6 +285,17 @@ const DIFF = {
   brutal: { dry:1.5, shock:1.3, risk:1.15},
 };
 const diff = ()=>DIFF[SET.diff]||DIFF.classic;
+
+/* ---------------- clay bodies ---------------- */
+const CLAYS = [
+  { key:'earthen',  n:'Earthenware', emoji:'',   unlock:0,
+    wet:0x8a5236, dry:0xb08558, bisque:0xc9926a, shock:1,   dryRate:1 },
+  { key:'stone',    n:'Stoneware',   emoji:'',   unlock:3,
+    wet:0x6a5a48, dry:0x9a8a70, bisque:0xb0a084, shock:.85, dryRate:.9 },
+  { key:'porcelain',n:'Porcelain',   emoji:'',   unlock:8,
+    wet:0xa8a49c, dry:0xd4d0c8, bisque:0xe8e4da, shock:1.45,dryRate:1.25 },
+];
+CLAYS.forEach(c=>{ c.wetC=new THREE.Color(c.wet); c.dryC=new THREE.Color(c.dry); c.bisqueC=new THREE.Color(c.bisque); });
 
 /* ---------------- audio ---------------- */
 const AudioEng = {
@@ -323,9 +365,11 @@ const AudioEng = {
   squish(){ this.noiseBurst(.09, rnd(300,600), .07); },
   scrape(){ this.noiseBurst(.12, rnd(1400,1900), .09); },
   slosh(){ this.noiseBurst(.22, rnd(400,700), .1); },
+  creak(){ this.noiseBurst(.3, rnd(180,260), .12); this.blip(70,.25,'triangle',.08); },
   crack(){ this.noiseBurst(.05, rnd(2200,3400), .22); this.blip(90,.12,'square',.1); },
   shatter(){ for(let i=0;i<7;i++) setTimeout(()=>this.crack(), i*rnd(20,70)); this.blip(55,.5,'sine',.22); },
   thud(){ this.blip(58,.3,'sine',.28); this.noiseBurst(.18,220,.16); },
+  camera(){ this.blip(1800,.05,'square',.09); this.blip(900,.08,'square',.06); },
   chime(good=1){
     const notes = good>1.05 ? [523,659,784,1047,1319] : good>0 ? [523,659,784] : [392,311];
     notes.forEach((f,i)=> setTimeout(()=>this.blip(f,.35,'triangle',.13), i*110));
@@ -357,6 +401,25 @@ function makeWoodTex(w=256,h=256,base='#6a5240',dark='#4a3828'){
   t.wrapS=t.wrapT=THREE.RepeatWrapping;
   return t;
 }
+function makeBrickTex(){
+  const c=document.createElement('canvas'); c.width=c.height=256;
+  const g=c.getContext('2d');
+  g.fillStyle='#4a3028'; g.fillRect(0,0,256,256);   // mortar
+  const bw=42, bh=20;
+  for(let row=0; row*bh<256+bh; row++){
+    const off = row%2? bw/2 : 0;
+    for(let col=-1; col*bw<256+bw; col++){
+      const r=140+rnd(50)|0, gr=70+rnd(28)|0, b=48+rnd(20)|0;
+      g.fillStyle=`rgb(${r},${gr},${b})`;
+      g.fillRect(col*bw+off+2, row*bh+2, bw-4, bh-4);
+      g.fillStyle='rgba(0,0,0,.18)';
+      for(let s=0;s<6;s++) g.fillRect(col*bw+off+2+rnd(bw-6), row*bh+2+rnd(bh-6), rnd(1,3), rnd(1,2));
+    }
+  }
+  const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace;
+  t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  return t;
+}
 function makeClayBump(){
   const c=document.createElement('canvas'); c.width=c.height=256;
   const g=c.getContext('2d');
@@ -373,6 +436,17 @@ function makeClayBump(){
   }
   const t=new THREE.CanvasTexture(c);
   t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,2);
+  return t;
+}
+function makeShaftTex(){
+  const c=document.createElement('canvas'); c.width=64; c.height=256;
+  const g=c.getContext('2d');
+  const gr=g.createLinearGradient(0,0,0,256);
+  gr.addColorStop(0,'rgba(255,214,150,.30)');
+  gr.addColorStop(.7,'rgba(255,200,130,.08)');
+  gr.addColorStop(1,'rgba(255,200,130,0)');
+  g.fillStyle=gr; g.fillRect(0,0,64,256);
+  const t=new THREE.CanvasTexture(c);
   return t;
 }
 
@@ -394,21 +468,24 @@ const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), .04).texture;
 
 const camera = new THREE.PerspectiveCamera(46, innerWidth/innerHeight, .1, 300);
-const camBase = new THREE.Vector3(0, 16.5, 44);
-camera.position.copy(camBase);
-camera.lookAt(0, 10.5, 0);
+/* eased camera rig: each stage sets a target; tick() glides toward it */
+const camPos = new THREE.Vector3(0,15,46), camLook = new THREE.Vector3(0,9,0);
+const camPosT = camPos.clone(), camLookT = camLook.clone();
+function setCam(px,py,pz, lx,ly,lz){ camPosT.set(px,py,pz); camLookT.set(lx,ly,lz); }
+camera.position.copy(camPos); camera.lookAt(camLook);
 
 const key = new THREE.DirectionalLight(0xffd9b0, 2.4);
 key.position.set(-16, 30, 22);
 key.castShadow = true;
 key.shadow.mapSize.set(1024,1024);
-key.shadow.camera.left=-26; key.shadow.camera.right=26;
-key.shadow.camera.top=32; key.shadow.camera.bottom=-8;
-key.shadow.camera.far=90; key.shadow.bias=-.002;
+key.shadow.camera.left=-30; key.shadow.camera.right=30;
+key.shadow.camera.top=34; key.shadow.camera.bottom=-8;
+key.shadow.camera.far=100; key.shadow.bias=-.002;
 scene.add(key);
 const fill = new THREE.DirectionalLight(0x7a90c0, .55); fill.position.set(18, 8, -6); scene.add(fill);
 scene.add(new THREE.AmbientLight(0x5a4038, .7));
-const kilnLight = new THREE.PointLight(0xff5a10, 0, 60); kilnLight.position.set(0, 12, 14); scene.add(kilnLight);
+const kilnLight = new THREE.PointLight(0xff5a10, 0, 55); scene.add(kilnLight);
+const shelfLight = new THREE.PointLight(0xffc890, 22, 30, 1.6); shelfLight.position.set(0, 26, -18); scene.add(shelfLight);
 
 function applyGfx(){
   const high = SET.gfx!=='low';
@@ -424,9 +501,6 @@ applyGfx();
   const g = cvs.getContext('2d'); const gr = g.createLinearGradient(0,0,0,256);
   gr.addColorStop(0,'#463040'); gr.addColorStop(.5,'#32202a'); gr.addColorStop(1,'#1a1016');
   g.fillStyle=gr; g.fillRect(0,0,16,256);
-  const rg = g.createRadialGradient(4,70,4,4,70,120);
-  rg.addColorStop(0,'rgba(255,190,120,.16)'); rg.addColorStop(1,'rgba(255,190,120,0)');
-  g.fillStyle=rg; g.fillRect(0,0,16,256);
   const tex = new THREE.CanvasTexture(cvs); tex.colorSpace = THREE.SRGBColorSpace;
   const wall = new THREE.Mesh(new THREE.PlaneGeometry(260,150), new THREE.MeshBasicMaterial({map:tex, fog:false}));
   wall.position.set(0, 30, -55); scene.add(wall);
@@ -437,7 +511,40 @@ applyGfx();
   floor.rotation.x = -Math.PI/2; floor.position.y = -3.2; floor.receiveShadow=true; scene.add(floor);
 }
 
-/* pottery wheel */
+/* window, light shafts and dust motes */
+{
+  const wf = new THREE.MeshStandardMaterial({color:0x3a2c20, roughness:.8});
+  const win = new THREE.Group();
+  const pane = new THREE.Mesh(new THREE.PlaneGeometry(16,22),
+    new THREE.MeshBasicMaterial({color:0xffe0b0, fog:false}));
+  win.add(pane);
+  [[0,11.4,17,1.4],[0,-11.4,17,1.4],[-8.2,0,1.4,24],[8.2,0,1.4,24],[0,0,1,24],[0,0,17,1]].forEach(([x,y,w,h])=>{
+    const bar=new THREE.Mesh(new THREE.BoxGeometry(w,h,.8), wf);
+    bar.position.set(x,y,.3); win.add(bar);
+  });
+  win.position.set(-30, 26, -54.4); scene.add(win);
+
+  const shaftTex = makeShaftTex();
+  for(let i=0;i<3;i++){
+    const shaft = new THREE.Mesh(new THREE.PlaneGeometry(9+i*3, 58),
+      new THREE.MeshBasicMaterial({map:shaftTex, transparent:true, depthWrite:false,
+        blending:THREE.AdditiveBlending, side:THREE.DoubleSide, fog:false}));
+    shaft.position.set(-28+i*3.5, 12, -30+i*6);
+    shaft.rotation.set(-.35, .25, .38);
+    scene.add(shaft);
+  }
+}
+const MOTES_N=54;
+const moteGeo = new THREE.BufferGeometry();
+moteGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MOTES_N*3),3));
+const motes = Array.from({length:MOTES_N},()=>({
+  p:new THREE.Vector3(rnd(-32,-2), rnd(2,26), rnd(-34,0)),
+  v:new THREE.Vector3(rnd(.1,.4), rnd(-.15,-.02), rnd(.05,.2)), s:rnd(1)}));
+scene.add(new THREE.Points(moteGeo, new THREE.PointsMaterial({
+  color:0xffd9a0, size:.22, transparent:true, opacity:.5,
+  blending:THREE.AdditiveBlending, depthWrite:false })));
+
+/* pottery wheel + water bucket */
 const wheel = new THREE.Group(); scene.add(wheel);
 {
   const wood = makeWoodTex();
@@ -457,9 +564,59 @@ const wheel = new THREE.Group(); scene.add(wheel);
   const base = new THREE.Mesh(new THREE.CylinderGeometry(3.2,4.8,2.3,24),
     new THREE.MeshStandardMaterial({color:0x3c2c20, roughness:.95}));
   base.position.y=-2.5; base.castShadow=true; scene.add(base);
+
+  const bucket = new THREE.Group();
+  const bw = new THREE.Mesh(new THREE.CylinderGeometry(2.6,2.1,3.4,18,1,true),
+    new THREE.MeshStandardMaterial({color:0x77706a, roughness:.5, metalness:.4, side:THREE.DoubleSide}));
+  bucket.add(bw);
+  const water = new THREE.Mesh(new THREE.CircleGeometry(2.45,18),
+    new THREE.MeshStandardMaterial({color:0x5a4636, roughness:.15, metalness:.1}));
+  water.rotation.x=-Math.PI/2; water.position.y=1.2; bucket.add(water);
+  bucket.position.set(13.5,-1.5,6); bucket.children.forEach(c=>c.castShadow=true);
+  scene.add(bucket);
 }
 
-/* the glaze tub (appears over the wheel during dipping) */
+/* the kiln — a brick beast in the corner */
+const KILN_POS = new THREE.Vector3(-22, -3.2, -8);
+const POT_KILN = new THREE.Vector3(-22, -2.9, -8);
+const kilnG = new THREE.Group();
+kilnG.position.copy(KILN_POS);
+kilnG.rotation.y = .85;
+scene.add(kilnG);
+let kilnDoor, peephole;
+{
+  const brick = makeBrickTex(); brick.repeat.set(2.2,2.2);
+  const bm = new THREE.MeshStandardMaterial({map:brick, roughness:.92});
+  const body = new THREE.Mesh(new THREE.BoxGeometry(15,17,13), bm);
+  body.position.y=8.5; body.castShadow=true; body.receiveShadow=true; kilnG.add(body);
+  const brick2 = makeBrickTex(); brick2.repeat.set(.8,1.6);
+  const chimney = new THREE.Mesh(new THREE.BoxGeometry(4,9,4),
+    new THREE.MeshStandardMaterial({map:brick2, roughness:.92}));
+  chimney.position.set(3,21.5,-2); chimney.castShadow=true; kilnG.add(chimney);
+  // dark opening in the front face
+  const opening = new THREE.Mesh(new THREE.PlaneGeometry(8.6,11),
+    new THREE.MeshBasicMaterial({color:0x0a0503}));
+  opening.position.set(0,6.5,6.53); kilnG.add(opening);
+  // arch lintel
+  const lintel = new THREE.Mesh(new THREE.BoxGeometry(10.4,1.4,1.4), bm);
+  lintel.position.set(0,12.4,6.6); kilnG.add(lintel);
+  // sliding iron door
+  kilnDoor = new THREE.Mesh(new THREE.BoxGeometry(9.6,12,.9),
+    new THREE.MeshStandardMaterial({color:0x33302c, roughness:.45, metalness:.7}));
+  kilnDoor.position.set(0,6.5,7.1); kilnG.add(kilnDoor);
+  peephole = new THREE.Mesh(new THREE.CircleGeometry(.85,20),
+    new THREE.MeshBasicMaterial({color:0xff6a10}));
+  peephole.position.set(0,6.8,7.6); peephole.material.transparent=true; peephole.material.opacity=0;
+  kilnG.add(peephole);
+  // ember bed inside
+  const embers = new THREE.Mesh(new THREE.PlaneGeometry(9,9),
+    new THREE.MeshBasicMaterial({color:0x571804}));
+  embers.rotation.x=-Math.PI/2; embers.position.set(0,.35,2); kilnG.add(embers);
+}
+const DOOR_CLOSED_Y = 6.5, DOOR_OPEN_Y = 16.5;
+kilnDoor.position.y = DOOR_OPEN_Y;
+
+/* the glaze tub */
 const tub = new THREE.Group(); scene.add(tub);
 const LIQ_Y = 8.5;
 let liquid;
@@ -475,7 +632,7 @@ let liquid;
   tub.visible = false;
 }
 
-/* the shelf where fired pieces live */
+/* the shelf */
 const shelfGroup = new THREE.Group(); scene.add(shelfGroup);
 {
   const wood = makeWoodTex(256,64,'#5a4430','#3a2a1c'); wood.repeat.set(4,1);
@@ -489,47 +646,117 @@ const shelfGroup = new THREE.Group(); scene.add(shelfGroup);
     leg.position.set(x, 14, z); shelfGroup.add(leg);
   });
 }
-const shelfPieces = [];
 const SHELF_SLOTS = [
   [-15,20.9],[ -7.5,20.9],[0,20.9],[7.5,20.9],[15,20.9],
   [-15,27.9],[ -7.5,27.9],[0,27.9],[7.5,27.9],[15,27.9],
 ];
-function addToShelf(){
-  const geo = potGeo.clone();
-  const mat = clayMat.clone(); mat.emissiveIntensity=0;
-  const m = new THREE.Mesh(geo, mat);
-  m.castShadow = renderer.shadowMap.enabled;
-  shelfPieces.unshift(m);
+const shelfPieces = [];
+window.shelfPieces = shelfPieces;
+
+/* build a static keepsake mesh from serialized piece data */
+function makePieceMesh(d){
+  const n=d.r.length, radial=28;
+  const rows=n*2, pos=new Float32Array(rows*radial*3), col=new Float32Array(rows*radial*3);
+  const geo=new THREE.BufferGeometry();
+  const glazeC = new THREE.Color(d.glaze);
+  const bisqueC = new THREE.Color(d.bisque||0xc9926a);
+  const idx=[];
+  for(let k=0;k<rows-1;k++) for(let j=0;j<radial;j++){
+    const a=k*radial+j, b=k*radial+(j+1)%radial, c=(k+1)*radial+j, e=(k+1)*radial+(j+1)%radial;
+    idx.push(a,c,b, b,c,e);
+  }
+  for(let i=0;i<n;i++){
+    const yn=i/(n-1), yy=yn*d.h, rr=d.r[i]+Math.sin(yn*44)*.03;
+    const rin=Math.max(rr-(d.t||1),.05), yIn=Math.max(yy,.6);
+    const glazed = yn <= d.frac+.001;
+    const c = glazed? glazeC : bisqueC;
+    const pool = 1 - (Math.sin(yn*44)<0? .07*-Math.sin(yn*44) : 0);
+    for(let j=0;j<radial;j++){
+      const a=j/radial*Math.PI*2, ca=Math.cos(a), sa=Math.sin(a);
+      const s=(.94+Math.sin(j*12.9898+i*.7)*.035)*(glazed?pool:1);
+      let o=(i*radial+j)*3;
+      pos[o]=ca*rr; pos[o+1]=yy; pos[o+2]=sa*rr;
+      col[o]=c.r*s; col[o+1]=c.g*s; col[o+2]=c.b*s;
+      o=((rows-1-i)*radial+j)*3;
+      pos[o]=ca*rin; pos[o+1]=yIn; pos[o+2]=sa*rin;
+      col[o]=c.r*s; col[o+1]=c.g*s; col[o+2]=c.b*s;
+    }
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col,3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const fin = d.finish||'gloss';
+  const mat = new THREE.MeshPhysicalMaterial({
+    color:0xffffff, vertexColors:true, envMapIntensity:.5,
+    roughness: fin==='gloss'?.14:fin==='satin'?.4:.6,
+    clearcoat: fin==='gloss'?.85:fin==='satin'?.35:.1, clearcoatRoughness:.2,
+  });
+  return new THREE.Mesh(geo, mat);
+}
+function layoutShelf(){
+  shelfPieces.forEach((p,i)=>{
+    if(i>=SHELF_SLOTS.length){ scene.remove(p.mesh); return; }
+    p.mesh.scale.setScalar(.26);
+    p.mesh.position.set(SHELF_SLOTS[i][0]+(p.jx||0), SHELF_SLOTS[i][1], -24);
+    p.mesh.rotation.y = p.jr||0;
+    p.mesh.castShadow = renderer.shadowMap.enabled;
+    scene.add(p.mesh);
+  });
   while(shelfPieces.length > SHELF_SLOTS.length){
     const old = shelfPieces.pop();
-    scene.remove(old); old.geometry.dispose(); old.material.dispose();
+    scene.remove(old.mesh); old.mesh.geometry.dispose(); old.mesh.material.dispose();
   }
-  shelfPieces.forEach((p,i)=>{
-    p.scale.setScalar(.26);
-    p.position.set(SHELF_SLOTS[i][0]+rnd(-.6,.6), SHELF_SLOTS[i][1], -24);
-    p.rotation.y = rnd(Math.PI*2);
-    scene.add(p);
-  });
   $('shelfCount').textContent = shelfPieces.length;
+}
+function saveShelf(){
+  localStorage.setItem('mudember_shelf', JSON.stringify(shelfPieces.map(p=>p.data)));
+}
+function loadShelf(){
+  let arr=[];
+  try{ arr = JSON.parse(localStorage.getItem('mudember_shelf')||'[]'); }catch(e){}
+  arr.slice(0,SHELF_SLOTS.length).forEach(d=>{
+    shelfPieces.push({data:d, mesh:makePieceMesh(d), jx:rnd(-.6,.6), jr:rnd(Math.PI*2)});
+  });
+  layoutShelf();
+}
+function addToShelf(){
+  let mean=0; for(let i=0;i<RINGS;i++) mean+=pot.t[i]; mean/=RINGS;
+  const d = {
+    h:+pot.h.toFixed(2),
+    r:Array.from(pot.r).map(v=>+v.toFixed(2)),
+    t:+mean.toFixed(2),
+    glaze:'#'+pot.glazeColor.getHexString(),
+    bisque:'#'+pot.clay.bisqueC.getHexString(),
+    frac:+pot.glazedFrac.toFixed(2),
+    finish:pot.glazeFinish,
+    kind:classifyPiece(),
+  };
+  shelfPieces.unshift({data:d, mesh:makePieceMesh(d), jx:rnd(-.6,.6), jr:rnd(Math.PI*2)});
+  layoutShelf();
+  saveShelf();
 }
 
 /* ---------------- pot geometry ---------------- */
-const CLAY_WET   = new THREE.Color(0x8a5236);
-const CLAY_DRY   = new THREE.Color(0xb08558);
-const BISQUE_COL = new THREE.Color(0xc9926a);
 const clayBump = makeClayBump();
-
 const clayMat = new THREE.MeshPhysicalMaterial({
-  color:CLAY_WET.clone(), roughness:.5, metalness:0, vertexColors:true,
+  color:CLAYS[0].wetC.clone(), roughness:.5, metalness:0, vertexColors:true,
   bumpMap:clayBump, bumpScale:.35, envMapIntensity:.5,
-  clearcoat:.45, clearcoatRoughness:.5,           // wet slip sheen
+  clearcoat:.45, clearcoatRoughness:.5,
   emissive:new THREE.Color(0xff4400), emissiveIntensity:0,
 });
 
-const ROWS = RINGS*2;                       // outer wall up + inner wall down
+const ROWS = RINGS*2;
 const vertCount = ROWS*RADIAL;
 const potGeo = new THREE.BufferGeometry();
 const speckle = new Float32Array(vertCount);
+/* glaze drip pattern, re-rolled per piece */
+const dripLen = new Float32Array(RADIAL);
+const edgeJit = new Float32Array(RADIAL);
+function rollDrips(){
+  for(let j=0;j<RADIAL;j++){ dripLen[j]=0; edgeJit[j]=rnd(-.015,.015); }
+  for(let k=0;k<6;k++) dripLen[Math.floor(rnd(RADIAL))]=rnd(.05,.14);
+}
 {
   const pos = new Float32Array(vertCount*3);
   const col = new Float32Array(vertCount*3);
@@ -550,30 +777,47 @@ const speckle = new Float32Array(vertCount);
     uv[v*2]=j/RADIAL*3; uv[v*2+1]=k/ROWS*2;
   }
 }
-/* ring -> vertex-color repaint (used once bisqued/glazed) */
 function ringOfRow(k){ return k<RINGS ? k : ROWS-1-k; }
+/* vertex-color repaint: bisque base, glaze with pooling in the throwing
+   valleys, jittered dip line, and darker drip streaks running from it */
 function repaintColors(){
   const col = potGeo.attributes.color.array;
   const glazeC = pot.glazeColor;
+  const speckly = pot.glazeFinish==='speckle';
   for(let k=0;k<ROWS;k++){
-    const yn = ringOfRow(k)/(RINGS-1);
-    const glazed = pot.bisqued && glazeC && yn <= pot.glazedFrac+.001;
-    const c = glazed? glazeC : (pot.bisqued? BISQUE_COL : null);
+    const ring = ringOfRow(k);
+    const yn = ring/(RINGS-1);
+    const ridge = Math.sin(yn*44);
+    const pool = 1 - (ridge<0? .09*-ridge : -.03*ridge);
     for(let j=0;j<RADIAL;j++){
-      const v=k*RADIAL+j, s=speckle[v];
+      const v=k*RADIAL+j;
+      let s=speckle[v];
+      let c=null;
+      if(pot.bisqued){
+        const boundary = pot.glazedFrac + edgeJit[j];
+        const glazed = glazeC && yn <= boundary+.001;
+        if(glazed){
+          c=glazeC;
+          s*=pool;
+          if(dripLen[j]>0 && yn > boundary-dripLen[j]) s*=.86;   // drip streak
+          if(speckly) s*= .88 + Math.sin(v*7.31)*.5*.2;
+        } else c=pot.clay.bisqueC;
+      }
       if(c){ col[v*3]=c.r*s; col[v*3+1]=c.g*s; col[v*3+2]=c.b*s; }
       else { col[v*3]=s; col[v*3+1]=s; col[v*3+2]=s; }
     }
   }
   potGeo.attributes.color.needsUpdate = true;
 }
+
+/* potRoot carries the pot to the kiln and back */
+const potRoot = new THREE.Group(); scene.add(potRoot);
 const potMesh = new THREE.Mesh(potGeo, clayMat);
 potMesh.castShadow=true; potMesh.receiveShadow=true;
-scene.add(potMesh);
+potRoot.add(potMesh);
 const baseCap = new THREE.Mesh(new THREE.CircleGeometry(1,RADIAL), clayMat);
-baseCap.rotation.x = -Math.PI/2; scene.add(baseCap);
+baseCap.rotation.x = -Math.PI/2; potRoot.add(baseCap);
 
-/* crack decal for pots that survive a firing wounded */
 let crackSprite=null;
 {
   const c=document.createElement('canvas'); c.width=64; c.height=256;
@@ -585,10 +829,10 @@ let crackSprite=null;
   const t=new THREE.CanvasTexture(c);
   crackSprite = new THREE.Mesh(new THREE.PlaneGeometry(2.2,9),
     new THREE.MeshBasicMaterial({map:t, transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-2}));
-  crackSprite.visible=false; scene.add(crackSprite);
+  crackSprite.visible=false; potRoot.add(crackSprite);
 }
 
-/* shards for shattering */
+/* shards */
 const shards=[];
 const shardGeo = new THREE.TetrahedronGeometry(.9);
 function spawnShards(){
@@ -597,8 +841,8 @@ function spawnShards(){
     const m = new THREE.Mesh(shardGeo, new THREE.MeshStandardMaterial({color:clayMat.color.clone(), roughness:.85}));
     const ri = Math.floor(rnd(RINGS)), a = rnd(Math.PI*2);
     const rr = pot.r[ri]||3;
-    m.position.set(Math.cos(a)*rr, ri/(RINGS-1)*pot.h, Math.sin(a)*rr);
-    m.userData.v = new THREE.Vector3(Math.cos(a)*rnd(6,16), rnd(6,20), Math.sin(a)*rnd(6,16));
+    m.position.set(Math.cos(a)*rr, ri/(RINGS-1)*pot.h, Math.sin(a)*rr).add(potRoot.position);
+    m.userData.v = new THREE.Vector3(Math.cos(a)*rnd(5,12), rnd(5,15), Math.sin(a)*rnd(5,12));
     m.userData.w = new THREE.Vector3(rnd(-9,9),rnd(-9,9),rnd(-9,9));
     m.userData.life = rnd(1.6,2.4);
     m.scale.setScalar(rnd(.5,1.6));
@@ -608,7 +852,7 @@ function spawnShards(){
 }
 function clearShards(){ shards.forEach(m=>{scene.remove(m); m.material.dispose();}); shards.length=0; }
 
-/* slip splatter while shaping */
+/* slip splatter / trim dust */
 const SPLAT_N = 46;
 const splatGeo = new THREE.BufferGeometry();
 splatGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SPLAT_N*3),3));
@@ -623,16 +867,50 @@ function emitSplat(y, r){
   s.life = rnd(.5,.9);
 }
 
+/* steam wisps off wet clay */
+const WISP_N = 10;
+const wispGeo = new THREE.BufferGeometry();
+wispGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(WISP_N*3),3));
+const wisps = Array.from({length:WISP_N},()=>({p:new THREE.Vector3(0,-99,0), life:0, max:1}));
+scene.add(new THREE.Points(wispGeo, new THREE.PointsMaterial({
+  color:0xcfd8e8, size:.9, transparent:true, opacity:.16, depthWrite:false })));
+let wispIdx=0;
+function emitWisp(){
+  const s = wisps[wispIdx++ % WISP_N];
+  const a=rnd(Math.PI*2), ri=Math.floor(rnd(RINGS*.5,RINGS-1));
+  s.p.set(Math.cos(a)*pot.r[ri], ri/(RINGS-1)*pot.h, Math.sin(a)*pot.r[ri]);
+  s.life = s.max = rnd(1.2,2.2);
+}
+
+/* ember sparks at the kiln reveal */
+const SPARK_N = 30;
+const sparkGeo = new THREE.BufferGeometry();
+sparkGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SPARK_N*3),3));
+const sparks = Array.from({length:SPARK_N},()=>({p:new THREE.Vector3(0,-99,0), v:new THREE.Vector3(), life:0}));
+scene.add(new THREE.Points(sparkGeo, new THREE.PointsMaterial({
+  color:0xffa030, size:.42, transparent:true, opacity:.95,
+  blending:THREE.AdditiveBlending, depthWrite:false })));
+function burstSparks(){
+  const fwd = new THREE.Vector3(Math.sin(kilnG.rotation.y),0,Math.cos(kilnG.rotation.y));
+  sparks.forEach(s=>{
+    s.p.copy(KILN_POS).addScaledVector(fwd,7).add(new THREE.Vector3(rnd(-3,3), rnd(3,11), rnd(-1,1)));
+    s.v.set(fwd.x*rnd(2,9)+rnd(-3,3), rnd(1,7), fwd.z*rnd(2,9)+rnd(-3,3));
+    s.life = rnd(.5,1.4);
+  });
+}
+
 /* ---------------- pot state & simulation ---------------- */
 const pot = {
   h:8, r:new Float32Array(RINGS), t:new Float32Array(RINGS), shock:new Float32Array(RINGS),
   moisture:1, cracks:0, collapsed:false, slump:0, slumpR:new Float32Array(RINGS), slumpH:8,
   instab:0, wobAmp:0, overT:0,
-  bubbles:0, offCenter:1,                      // pre-throw prep
-  bisqued:false, bisqueCracked:false,          // first firing
-  glazeColor:null, glazeName:'', glazedFrac:0, glazeThk:0,  // dipping
-  y:0,                                          // vertical offset (dipping anim)
+  bubbles:0, offCenter:1,
+  clay:CLAYS[0],
+  bisqued:false, bisqueCracked:false,
+  glazeColor:null, glazeName:'', glazeFinish:'gloss', glazedFrac:0, glazeThk:0,
+  y:0,
 };
+window.pot = pot;
 function newLump(){
   pot.h = 8;
   for(let i=0;i<RINGS;i++){
@@ -645,12 +923,13 @@ function newLump(){
   pot.instab=0; pot.wobAmp=0; pot.overT=0;
   pot.bubbles = 4+Math.floor(rnd(3)); pot.offCenter=1;
   pot.bisqued=false; pot.bisqueCracked=false;
-  pot.glazeColor=null; pot.glazeName=''; pot.glazedFrac=0; pot.glazeThk=0; pot.y=0;
-  clayMat.color.copy(CLAY_WET); clayMat.roughness=.5; clayMat.clearcoat=.45; clayMat.emissiveIntensity=0;
+  pot.glazeColor=null; pot.glazeName=''; pot.glazeFinish='gloss'; pot.glazedFrac=0; pot.glazeThk=0; pot.y=0;
+  potRoot.position.set(0,0,0);
+  rollDrips();
+  clayMat.color.copy(pot.clay.wetC); clayMat.roughness=.5; clayMat.clearcoat=.45; clayMat.emissiveIntensity=0;
   repaintColors();
   crackSprite.visible=false; potMesh.visible=true; baseCap.visible=true;
 }
-newLump();
 
 let spin=0;
 const ringPhase = Array.from({length:RINGS},(_,i)=>i*.55);
@@ -661,19 +940,22 @@ function rebuildPot(){
   const slumpT = pot.slump;
   const floorY = Math.max(pot.t[0]*.85, .6);
   const sy = 1-wedgeAnim*.16, sxz = 1+wedgeAnim*.12;
-  // un-centred clay orbits the wheel axis
   const offA = spin*1.0;
   const offX = pot.offCenter*.9*Math.sin(offA), offZ = pot.offCenter*.9*Math.cos(offA);
   for(let i=0;i<RINGS;i++){
     const yn = i/(RINGS-1);
     let rr = pot.r[i]*sxz, yy = yn*pot.h*sy + pot.y;
     if(slumpT>0){ rr = lerp(rr, pot.slumpR[i], slumpT); yy = yn*lerp(pot.h, pot.slumpH, slumpT)+pot.y; }
-    rr += Math.sin(yn*44)*.03;   // subtle throwing ridges
+    rr += Math.sin(yn*44)*.03;
+    const lip = Math.min(pot.t[i], .8);
+    if(i===RINGS-1) rr -= lip*.28;                    // rounded rim: ease the outer edge in
     const wob = pot.wobAmp * (0.15+0.85*yn) * (1+pot.shock[i]*.4);
     const cx = offX*(.3+.7*yn) + wob*Math.sin(spin*1.0+ringPhase[i]);
     const cz = offZ*(.3+.7*yn) + wob*Math.cos(spin*1.31+ringPhase[i]);
-    const rin = Math.max(rr - pot.t[i], .05);
-    const yIn = Math.max(yy, floorY+pot.y);
+    let rin = Math.max(rr - pot.t[i], .05);
+    if(i===RINGS-1) rin += lip*.28;                   // ...and the inner edge out
+    let yIn = Math.max(yy, floorY+pot.y);
+    if(i===RINGS-1) yIn = yy + lip*.22;               // slight dome on the lip
     for(let j=0;j<RADIAL;j++){
       const a = j/RADIAL*Math.PI*2 + spin;
       const ca=Math.cos(a), sa=Math.sin(a);
@@ -698,7 +980,6 @@ function computeInstability(){
     const thinN = clamp((.42-pot.t[i])/.42,0,1);
     const slope = i<RINGS-1 ? clamp((Math.abs(pot.r[i+1]-pot.r[i])/dy - 1.15)*.5, 0, .9) : 0;
     const hw = .3 + .8*yn;
-    // rough handling is survivable on thick walls; thin walls turn it deadly
     const s = hw*(thinN*1.05 + slope + pot.shock[i]*(.35 + thinN*1.15));
     if(s>worst) worst=s;
   }
@@ -707,8 +988,8 @@ function computeInstability(){
   const topR = pot.r[RINGS-4];
   worst += clamp((topR-4.5)*.06,0,.35) * clamp((.5-minLow)/.5,0,1);
   worst *= 1 + clamp((pot.h-14)/22,0,.4);
-  worst *= 1 + pot.offCenter*1.4;      // sloppy centring haunts the whole throw
-  return worst*diff().shock;
+  worst *= 1 + pot.offCenter*1.4;
+  return worst * diff().shock * pot.clay.shock;
 }
 
 function startCollapse(){
@@ -723,16 +1004,59 @@ function startCollapse(){
   }
   AudioEng.thud();
   banner('IT COLLAPSED!', 1.8, true);
-  hint('Bisque the blob anyway (collectors are strange) — or scrap it.');
+  guide('<b>SCRAP</b> it — or <b>BISQUE THE BLOB</b> (collectors are strange)');
   updateButtons();
+}
+
+/* ---------------- forms you can set out to make ---------------- */
+const FORMS = [
+  {key:'free',   n:'Freeform', e:'✨', d:'no guide — just you & the clay'},
+  {key:'cup',    n:'Cup',      e:'☕', d:'small & friendly',      h:9,  s:3.8, r:yn=>.8+.12*yn+.05*Math.sin(yn*3)},
+  {key:'bowl',   n:'Bowl',     e:'🥣', d:'wide & open',           h:8,  s:5.4, r:yn=>.45+.95*Math.pow(yn,.7)},
+  {key:'vase',   n:'Vase',     e:'🏺', d:'tall, narrow neck',     h:17, s:4.6, r:yn=>.55+.75*Math.sin(yn*2.6+.3)-.35*Math.pow(yn,3)},
+  {key:'jug',    n:'Jug',      e:'🫖', d:'stout & useful',        h:14, s:4.8, r:yn=>.5+.9*Math.sin(yn*2.2+.5)*(1-yn*.35)},
+  {key:'amphora',n:'Amphora',  e:'⚱️', d:'the potter\'s test',    h:20, s:4.4, r:yn=>.35+.95*Math.sin(Math.pow(yn,.85)*2.9+.15)},
+];
+let ghostMesh = null;
+function buildGhost(f){
+  if(ghostMesh){ scene.remove(ghostMesh); ghostMesh.geometry.dispose(); ghostMesh=null; }
+  if(!f || f.key==='free') return;
+  const pts=[];
+  for(let i=0;i<=32;i++){ const yn=i/32; pts.push(new THREE.Vector2(Math.max(f.r(yn)*f.s,.1), yn*f.h)); }
+  const geo = new THREE.LatheGeometry(pts, 40);
+  // depthTest off so the guide reads through the clay like a hologram
+  ghostMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+    color:0xaad4ff, transparent:true, opacity:.15, depthWrite:false, depthTest:false, side:THREE.DoubleSide }));
+  ghostMesh.renderOrder = 3;
+  ghostMesh.visible = false;
+  scene.add(ghostMesh);
+}
+function targetRadiusAt(y){
+  const f=G.form;
+  if(!f || f.key==='free' || y<0 || y>f.h) return 0;
+  return f.r(y/f.h)*f.s;
+}
+function matchPct(){
+  const f=G.form;
+  if(!f || f.key==='free' || pot.collapsed) return 0;
+  const top = Math.max(pot.h, f.h);
+  let err=0, norm=0;
+  for(let k=0;k<=36;k++){
+    const y = k/36*top;
+    const rp = y<=pot.h ? pot.r[Math.round(y/pot.h*(RINGS-1))] : 0;
+    const rt = targetRadiusAt(y);
+    err += Math.abs(rp-rt); norm += Math.max(rt,1.2);
+  }
+  return clamp(Math.exp(-2.6*err/norm)*100,0,99.4);
 }
 
 /* ---------------- glazes & piece naming ---------------- */
 const GLAZES = [
-  {n:'Ash White', c:0xe8e2d4}, {n:'Ember Red', c:0xb03a24},
-  {n:'Deep Teal', c:0x1f6a6a}, {n:'Honey',     c:0xc98a2e},
-  {n:'Midnight',  c:0x27304a}, {n:'Celadon',   c:0x9ec4a0},
-  {n:'Oxblood',   c:0x6a1420}, {n:'Sunbloom',  c:0xe0b83a},
+  {n:'Ash White', c:0xe8e2d4, f:'satin'},  {n:'Ember Red', c:0xb03a24, f:'gloss'},
+  {n:'Deep Teal', c:0x1f6a6a, f:'gloss'},  {n:'Honey',     c:0xc98a2e, f:'gloss'},
+  {n:'Midnight',  c:0x27304a, f:'satin'},  {n:'Celadon',   c:0x9ec4a0, f:'gloss'},
+  {n:'Oxblood',   c:0x6a1420, f:'gloss'},  {n:'Sunbloom',  c:0xe0b83a, f:'satin'},
+  {n:'Speckled Ash', c:0xb8b0a0, f:'speckle'}, {n:'Tenmoku', c:0x38200e, f:'speckle'},
 ];
 function classifyPiece(){
   if(pot.collapsed) return pick(['sculpture','artifact','statement piece','mood']);
@@ -757,10 +1081,13 @@ function wallReport(){
 /* ---------------- game state ---------------- */
 const G = {
   state:'title', prevState:'title',
-  kilnT:0, kilnKind:'bisque', kilnOutcome:null, kilnDur:5.6,
+  kilnT:0, kilnKind:'bisque', kilnOutcome:null, kilnApplied:false,
   fired: +(localStorage.getItem('mudember_fired')||0),
 };
-window.G = G; window.pot = pot;   // handy for debugging
+window.G = G;
+
+/* kiln cinematic timeline (seconds) */
+const KT = { travel:1.1, doorShut:1.8, heatEnd:5.2, doorOpen:5.9, done:7.0 };
 
 /* ---------------- kiln risk models ---------------- */
 function thinFrac(){ let n=0; for(let i=0;i<RINGS;i++) if(pot.t[i]<.28) n++; return Math.min(n*.045,.4); }
@@ -799,8 +1126,14 @@ function banner(msg, secs=1.6, warn=false){
 }
 let hintTimer=0;
 function hint(msg, secs=6){ const h=$('hint'); h.innerHTML=msg; h.style.opacity=1; hintTimer=secs; }
+/* the always-visible "here's what to do" strip */
+function guide(html){
+  const g=$('guideBar');
+  if(!html){ g.style.display='none'; return; }
+  g.style.display='block'; g.innerHTML=html;
+}
 
-const SCREENS = ['titleScreen','introScreen','settingsScreen','resultScreen'];
+const SCREENS = ['titleScreen','introScreen','settingsScreen','planScreen','resultScreen'];
 function showScreen(id){ SCREENS.forEach(s=>$(s).style.display = s===id?'flex':'none'); }
 
 const STAGE_INFO = {
@@ -823,7 +1156,9 @@ function setPlayHUD(on){
   $('shelfBox').style.display = on?'block':'none';
   $('gearBtn').style.display = on?'flex':'none';
   $('muteBtn').style.display = 'flex';
-  if(!on){ $('stageBox').style.display='none'; $('meters').style.display='none'; $('glazeChips').style.display='none'; }
+  $('photoBar').style.display='none';
+  if(!on){ $('stageBox').style.display='none'; $('meters').style.display='none';
+           $('chipRow').style.display='none'; guide(null); }
 }
 function updateButtons(){
   const s=G.state;
@@ -838,6 +1173,50 @@ function updateButtons(){
   if(s==='wedge'||s==='center'){ fire.disabled=true; fire.innerHTML=(s==='wedge'?'WEDGE FIRST':'CENTRE FIRST')+'<span class="risk" id="riskTag">the kiln can wait</span>'; }
   else if(s==='throwing'){ fire.disabled=false; fire.innerHTML=(pot.collapsed?'BISQUE THE BLOB 🔥':'BISQUE FIRE 🔥')+'<span class="risk" id="riskTag"></span>'; }
   else if(s==='glazeDip'){ fire.disabled=false; fire.innerHTML='GLAZE FIRE 🔥<span class="risk" id="riskTag"></span>'; }
+}
+
+/* ---------------- chips (clay bodies / glazes) ---------------- */
+function showClayChips(){
+  const row=$('chipRow'); row.innerHTML=''; row.style.display='flex';
+  CLAYS.forEach(cl=>{
+    const locked = G.fired < cl.unlock;
+    const wrap=document.createElement('div'); wrap.className='chipWrap';
+    const el=document.createElement('button');
+    el.className='chip'+(pot.clay===cl?' on':'');
+    el.style.background='#'+cl.wet.toString(16).padStart(6,'0');
+    if(locked) el.textContent='🔒';
+    el.onclick = ()=>{
+      if(locked){ banner(`fire ${cl.unlock - G.fired} more piece${cl.unlock-G.fired>1?'s':''} to unlock ${cl.n}`, 1.6); return; }
+      pot.clay=cl;
+      localStorage.setItem('mudember_clay', cl.key);
+      row.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
+      el.classList.add('on');
+      clayMat.color.copy(cl.wetC);
+      setStage(`${cl.n} · air bubbles: ${pot.bubbles}`);
+      AudioEng.blip(560,.09,'triangle',.09);
+    };
+    const lbl=document.createElement('div'); lbl.className='chipLbl';
+    lbl.textContent = locked? `${cl.n} 🔒` : cl.n;
+    wrap.appendChild(el); wrap.appendChild(lbl); row.appendChild(wrap);
+  });
+}
+function showGlazeChips(){
+  const row=$('chipRow'); row.innerHTML=''; row.style.display='flex';
+  const opts=[]; while(opts.length<3){ const g=pick(GLAZES); if(!opts.includes(g)) opts.push(g); }
+  opts.forEach((g,i)=>{
+    const wrap=document.createElement('div'); wrap.className='chipWrap';
+    const el=document.createElement('button'); el.className='chip'+(i===0?' on':'');
+    el.style.background='#'+g.c.toString(16).padStart(6,'0');
+    el.onclick = ()=>{
+      row.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
+      el.classList.add('on');
+      setGlazeColor(g);
+      AudioEng.blip(620,.09,'triangle',.09);
+    };
+    const lbl=document.createElement('div'); lbl.className='chipLbl'; lbl.textContent=g.n;
+    wrap.appendChild(el); wrap.appendChild(lbl); row.appendChild(wrap);
+  });
+  setGlazeColor(opts[0]);
 }
 
 /* ---------------- intro ---------------- */
@@ -855,6 +1234,7 @@ function showIntro(){
   $('introNext').textContent='next →';
   showScreen('introScreen');
   setPlayHUD(false); $('muteBtn').style.display='flex';
+  setCam(0,15,46, 0,9,0);
 }
 $('introNext').onclick = ()=>{
   AudioEng.blip(520+introIdx*80,.1,'triangle',.09);
@@ -901,34 +1281,66 @@ $('gearBtn').addEventListener('pointerdown', e=>{
 function refreshStageHUD(){
   setPlayHUD(['wedge','center','throwing','glazeDip'].includes(G.state));
   $('meters').style.display = G.state==='throwing'?'block':'none';
-  $('glazeChips').style.display = G.state==='glazeDip'?'flex':'none';
+  if(G.state==='wedge') showClayChips();
+  else if(G.state==='glazeDip') $('chipRow').style.display='flex';
+  else $('chipRow').style.display='none';
   updateButtons();
   setStage($('stageSub').textContent);
 }
-function enterStudio(){ newLump(); toWedge(); }
+function enterStudio(){
+  const savedClay = CLAYS.find(c=>c.key===localStorage.getItem('mudember_clay'));
+  if(savedClay && G.fired>=savedClay.unlock) pot.clay=savedClay;
+  newLump();
+  toPlan();
+}
+function toPlan(){
+  G.state='plan';
+  setPlayHUD(false); $('muteBtn').style.display='flex';
+  tub.visible=false; potMesh.visible=true; baseCap.visible=true;
+  setCam(0,15,46, 0,9,0);
+  const grid=$('formGrid'); grid.innerHTML='';
+  FORMS.forEach(f=>{
+    const el=document.createElement('button'); el.className='btn formBtn';
+    el.innerHTML=`<div class="fEmoji">${f.e}</div>${f.n}<div class="fDesc">${f.d}</div>`;
+    el.onclick=()=>{
+      G.form=f;
+      buildGhost(f);
+      AudioEng.blip(560,.09,'triangle',.09);
+      toWedge();
+    };
+    grid.appendChild(el);
+  });
+  showScreen('planScreen');
+}
 function toWedge(){
   G.state='wedge';
   SCREENS.forEach(s=>$(s).style.display='none');
   tub.visible=false; potMesh.visible=true; baseCap.visible=true;
   refreshStageHUD();
-  setStage(`air bubbles: ${pot.bubbles}`);
+  setStage(`${pot.clay.n} · air bubbles: ${pot.bubbles}`);
+  setCam(0,11,30, 0,4.5,0);
   AudioEng.hum(.2);
-  hint('<b>Tap the clay</b> to knead the air bubbles out.<br>Bubbles explode in the kiln.', 6);
+  guide('<b>TAP</b> the clay to squeeze the air bubbles out');
+  hint('Bubbles explode in the kiln. Pick a clay body below.', 5);
 }
 function toCenter(){
   G.state='center';
   refreshStageHUD();
   setStage('press & hold to centre');
+  setCam(0,14,36, 0,5.5,0);
   AudioEng.hum(1);
-  hint('<b>Press and hold</b> the spinning clay to centre it.<br>Off-centre clay wobbles forever.', 6);
+  guide('<b>PRESS &amp; HOLD</b> the spinning clay to centre it');
+  hint('Off-centre clay wobbles forever.', 5);
 }
 function toThrowing(){
   G.state='throwing';
   refreshStageHUD();
   setStage('');
+  setCam(0,16.5,44, 0,8,0);
   AudioEng.hum(1);
+  guide('<b>DRAG ↔</b> to shape the wall · <b>DRAG ↑</b> near the rim to grow taller');
   if(G.fired===0 && shelfPieces.length===0)
-    hint('<b>Drag sideways</b> to shape · <b>drag up</b> near the rim to pull taller.<br>At leather-hard you can trim. Then: the bisque.', 9);
+    hint('Watch the wobble — ease off when it warns.<br>At leather-hard you can trim. Then: the bisque.', 8);
 }
 function startKiln(kind){
   G.state = kind==='bisque'?'bisque':'glazefire';
@@ -938,7 +1350,7 @@ function startKiln(kind){
   setStage('');
   $('stageBox').style.display='block';
   tub.visible=false; pot.y=0;
-  G.kilnT=0;
+  G.kilnT=0; G.kilnApplied=false;
   const risk = kind==='bisque'? bisqueRisks() : glazeRisks();
   const roll = Math.random();
   if(roll < risk.total*.62) G.kilnOutcome='shatter';
@@ -946,18 +1358,17 @@ function startKiln(kind){
   else G.kilnOutcome='ok';
   pot.wobAmp=0; pot.instab=0; pot.shock.fill(0);
   banner(kind==='bisque'?'INTO THE BISQUE…':'THE GLAZE FIRE…', 2.2);
-  AudioEng.hum(0); AudioEng.warn(0); AudioEng.rumble(1);
+  AudioEng.hum(0); AudioEng.warn(0); AudioEng.rumble(1); AudioEng.creak();
+  setCam(-4,10,20, -20,7,-8);
+  kilnLight.position.copy(KILN_POS).add(new THREE.Vector3(0,8,4));
   $('vignette').style.opacity=1;
 }
-function finishKiln(){
-  AudioEng.rumble(0);
-  $('vignette').style.opacity=0;
-  clayMat.emissiveIntensity=0; kilnLight.intensity=0; scene.background.copy(BG);
-  if(G.kilnKind==='bisque') finishBisque(); else finishGlazeFire();
+function applyKilnOutcome(){
+  if(G.kilnKind==='bisque') applyBisque(); else applyGlazeFire();
 }
-function finishBisque(){
+function applyBisque(){
   if(G.kilnOutcome==='shatter'){
-    spawnShards(); potMesh.visible=false; baseCap.visible=false;
+    spawnShards(); potMesh.visible=false; baseCap.visible=false; crackSprite.visible=false;
     AudioEng.shatter();
     const risks=bisqueRisks();
     showResult('💥 BURST IN THE BISQUE!',
@@ -981,43 +1392,31 @@ function finishBisque(){
   clayMat.color.set(0xffffff);
   clayMat.roughness=.8; clayMat.clearcoat=0;
   repaintColors();
-  toGlazeDip();
 }
 function toGlazeDip(){
   G.state='glazeDip';
+  potRoot.position.set(0,0,0);
   refreshStageHUD();
   tub.visible=true;
-  pot.y=14;                       // hoist the bisqueware above the tub
+  pot.y=14;
   setStage('coverage 0%');
+  setCam(0,18,46, 0,11,0);
   AudioEng.hum(.15);
-  hint('Pick a glaze, then <b>drag down</b> to dip the pot into the tub.<br>Deeper = more coverage. Longer = thicker coat (it can run!).', 8);
-  // build color chips
-  const row=$('glazeChips'); row.innerHTML='';
-  const opts=[]; while(opts.length<3){ const g=pick(GLAZES); if(!opts.includes(g)) opts.push(g); }
-  opts.forEach((g,i)=>{
-    const el=document.createElement('button'); el.className='chip'+(i===0?' on':'');
-    el.style.background='#'+g.c.toString(16).padStart(6,'0');
-    el.onclick = ()=>{
-      row.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
-      el.classList.add('on');
-      setGlazeColor(g);
-      AudioEng.blip(620,.09,'triangle',.09);
-    };
-    row.appendChild(el);
-  });
-  setGlazeColor(opts[0]);
+  guide('<b>DRAG ↓</b> to dip into the glaze · release to lift');
+  hint('Deeper = more coverage. Longer = thicker coat (heavy coats run!).<br>Pick a colour below.', 7);
+  showGlazeChips();
 }
 function setGlazeColor(g){
   pot.glazeName=g.n;
+  pot.glazeFinish=g.f;
   pot.glazeColor=new THREE.Color(g.c);
   liquid.material.color.set(g.c);
   if(pot.glazedFrac>0) repaintColors();
 }
-function finishGlazeFire(){
+function applyGlazeFire(){
   const risks=glazeRisks();
   const kind=classifyPiece();
   if(G.kilnOutcome==='shatter'){
-    // in the glaze fire "shatter" means the piece split or the glaze ran and fused
     const ran = risks.heavy>.1 && Math.random()<.6;
     if(ran){
       showResult('🫠 THE GLAZE RAN',
@@ -1034,12 +1433,15 @@ function finishGlazeFire(){
     }
     return;
   }
-  // survived — the glaze develops
   const cracked = G.kilnOutcome==='crack';
   const cov = Math.round(pot.glazedFrac*100);
   const coat = pot.glazeThk>5?'heavy':pot.glazeThk>1.5?'good':'thin';
   pot.glazeColor.offsetHSL(rnd(-.02,.02), rnd(-.06,.06), rnd(-.03,.03));
-  clayMat.roughness=.16; clayMat.clearcoat=.85; clayMat.clearcoatRoughness=.15;
+  if(pot.clay.key==='porcelain') pot.glazeColor.offsetHSL(0,.04,.05);   // porcelain makes glazes sing
+  const fin=pot.glazeFinish;
+  clayMat.roughness = fin==='gloss'?.14:fin==='satin'?.4:.6;
+  clayMat.clearcoat = fin==='gloss'?.85:fin==='satin'?.35:.1;
+  clayMat.clearcoatRoughness=.18;
   repaintColors();
   if(cracked){ AudioEng.crack(); crackSprite.visible=true; crackSprite.scale.set(1, pot.h/9, 1); }
   const flawless = !cracked && !pot.collapsed && !pot.bisqueCracked && risks.total<.12 && cov>70 && coat==='good';
@@ -1057,11 +1459,13 @@ function finishGlazeFire(){
   } else {
     title='🏺 A finished '+kind;
     flavor=pick([
-      'The glaze pooled beautifully at the curve.',
+      'The glaze pooled beautifully in the throwing rings.',
       'Warm from the kiln, it fits your hands exactly.',
       'The wheel, both fires, and you — all in agreement today.']);
   }
   const rows=[['Piece','a '+kind],
+    ...(G.form && G.form.key!=='free' && !pot.collapsed ? [['Sketch', `${G.form.n} · ${Math.round(matchPct())}%`]] : []),
+    ['Clay', pot.clay.n],
     ['Bisque', pot.bisqueCracked?'hairline crack':'clean'],
     ['Glaze', pot.glazeName+' · '+cov+'%'],
     ['Coat', coat],
@@ -1071,16 +1475,44 @@ function finishGlazeFire(){
   addToShelf();
   rows.push(['Shelf', shelfPieces.length+' piece'+(shelfPieces.length>1?'s':'')]);
   AudioEng.chime(flawless?1.2:1);
-  showResult(title, flavor, rows);
+  showResult(title, flavor, rows, true);
 }
-function showResult(title, flavor, rows){
+/* prepares the result card; the kiln timeline shows it when the door is open */
+function showResult(title, flavor, rows, survived=false){
   $('resTitle').textContent = title;
   $('resFlavor').textContent = flavor;
   $('resRows').innerHTML = rows.map(r=>`<div>${r[0]}<b>${r[1]}</b></div>`).join('');
-  G.state='result';
+  $('photoBtn').style.display = survived? 'block':'none';
   $('stageBox').style.display='none';
-  setTimeout(()=>showScreen('resultScreen'), title.includes('💥')?1400:600);
 }
+
+/* ---------------- photo mode ---------------- */
+$('photoBtn').onclick = ()=>{
+  G.state='photo';
+  showScreen('');
+  SCREENS.forEach(s=>$(s).style.display='none');
+  $('photoBar').style.display='flex';
+  $('muteBtn').style.display='none'; $('gearBtn').style.display='none';
+  potRoot.position.set(0,0,0); pot.y=0;
+  let rMax=0; for(let i=0;i<RINGS;i++) rMax=Math.max(rMax,pot.r[i]);
+  const d = clamp(Math.max(pot.h*1.9, rMax*4.2), 18, 46);
+  setCam(0, pot.h*.6+2, d, 0, pot.h*.42, 0);
+};
+$('photoSave').onclick = ()=>{
+  renderer.render(scene, camera);
+  const a=document.createElement('a');
+  a.href=renderer.domElement.toDataURL('image/png');
+  a.download='mud-and-ember.png';
+  a.click();
+  AudioEng.camera();
+  banner('saved 📸', 1.2);
+};
+$('photoBack').onclick = ()=>{
+  $('photoBar').style.display='none';
+  $('muteBtn').style.display='flex';
+  G.state='result';
+  showScreen('resultScreen');
+};
 
 $('startBtn').onclick = ()=>{
   AudioEng.init(); AudioEng.resume();
@@ -1098,14 +1530,12 @@ $('scrapBtn').onclick = ()=>{
 $('toolBtn').onclick = ()=>{
   if(G.state!=='throwing' || pot.collapsed) return;
   if(pot.moisture>.55){
-    // sponge
     if(pot.moisture>.9){ banner('already soaked', 1); return; }
     pot.moisture = Math.min(1, pot.moisture+.22);
-    for(let i=0;i<RINGS;i++) pot.shock[i]=Math.min(pot.shock[i]+.3, 1.3);   // soft clay slumps
+    for(let i=0;i<RINGS;i++) pot.shock[i]=Math.min(pot.shock[i]+.3, 1.3);
     AudioEng.squish(); AudioEng.squish();
     banner('💧 re-wet — careful, it\'s soft', 1.3);
   } else {
-    // trim: even the walls, shave them thinner
     let mean=0; for(let i=0;i<RINGS;i++) mean+=pot.t[i]; mean/=RINGS;
     for(let i=0;i<RINGS;i++){
       pot.t[i]=clamp(lerp(pot.t[i],mean,.35)*.96, .12, 3);
@@ -1135,12 +1565,11 @@ renderer.domElement.addEventListener('pointerdown', e=>{
   AudioEng.init(); AudioEng.resume();
   touching=true; lastX=e.clientX; lastY=e.clientY;
   if(G.state==='wedge'){
-    // knead a bubble out
     wedgeAnim=1;
     if(pot.bubbles>0){
       pot.bubbles--;
       AudioEng.squish();
-      setStage(`air bubbles: ${pot.bubbles}`);
+      setStage(`${pot.clay.n} · air bubbles: ${pot.bubbles}`);
       emitSplat(rnd(2,6), pot.r[5]+.4);
       if(pot.bubbles===0){ banner('well wedged!', 1.2); setTimeout(toCenter, 500); }
     }
@@ -1153,14 +1582,12 @@ addEventListener('pointermove', e=>{
   lastX=e.clientX; lastY=e.clientY;
   if(!touching) return;
 
-  /* --- dipping --- */
   if(G.state==='glazeDip'){
     pot.y = clamp(pot.y - dy*.06, LIQ_Y-MAX_H-3, 14);
     return;
   }
   if(G.state!=='throwing' || pot.collapsed) return;
 
-  /* --- shaping --- */
   const workability = .25 + .75*pot.moisture;
   const yTop=potScreenY(pot.h), yBot=potScreenY(0);
   const fr = clamp((yBot-e.clientY)/(yBot-yTop), 0, 1);
@@ -1214,11 +1641,13 @@ document.addEventListener('visibilitychange', ()=>{
 const MOIST_TAGS = [[.66,'WET','#7ec8ff'],[.55,'STIFFENING','#a8b8d0'],[.33,'LEATHER-HARD','#d0a86a'],[0,'BONE DRY','#e8ceaa']];
 let lastT = performance.now();
 let wasLeather = false;
+const tmpV = new THREE.Vector3();
 
 function tick(now){
   requestAnimationFrame(tick);
   const dt = Math.min((now-lastT)/1000, .05); lastT=now;
-  const spinRate = (G.state==='bisque'||G.state==='glazefire')? .6
+  const inKiln = G.state==='bisque'||G.state==='glazefire';
+  const spinRate = inKiln? 0
                  : (G.state==='center'||G.state==='throwing')? 2.6
                  : G.state==='glazeDip'? 1.1 : .5;
   spin += dt * spinRate;
@@ -1242,16 +1671,17 @@ function tick(now){
     }
   }
 
-  /* throwing: drying, wobble, collapse */
+  /* throwing */
   if(G.state==='throwing'){
     if(!pot.collapsed){
-      pot.moisture = Math.max(0, pot.moisture - dt/95*diff().dry);
-      clayMat.color.copy(CLAY_WET).lerp(CLAY_DRY, 1-pot.moisture);
+      pot.moisture = Math.max(0, pot.moisture - dt/95*diff().dry*pot.clay.dryRate);
+      clayMat.color.copy(pot.clay.wetC).lerp(pot.clay.dryC, 1-pot.moisture);
       clayMat.clearcoat = .45*pot.moisture;
       clayMat.roughness = lerp(.5,.85,1-pot.moisture);
       const leather = pot.moisture<=.55;
       if(leather!==wasLeather){ wasLeather=leather; updateButtons();
         if(leather) banner('leather-hard — you can trim now', 1.8); }
+      if(pot.moisture>.5 && Math.random()<dt*2.2) emitWisp();
     }
     const inst = pot.collapsed? 0 : computeInstability();
     pot.instab = lerp(pot.instab, inst, 1-Math.exp(-dt*6));
@@ -1277,7 +1707,11 @@ function tick(now){
     if(rt) rt.textContent = `bisque risk ${Math.round(risk.total*100)}% — ${risk.why}`;
     $('fireBtn').classList.toggle('hot', risk.total>.35);
     $('vignette').style.opacity = clamp((pot.instab-.6)*.9,0,.85);
+    camLookT.y = clamp(pot.h*.55,7,13);
+    if(G.form && G.form.key!=='free' && !pot.collapsed)
+      setStage(`sketch match ${Math.round(matchPct())}%`);
   }
+  if(ghostMesh) ghostMesh.visible = G.state==='throwing' && !pot.collapsed;
 
   /* dipping */
   if(G.state==='glazeDip'){
@@ -1298,20 +1732,54 @@ function tick(now){
     $('fireBtn').classList.toggle('hot', risk.total>.35);
   }
 
-  /* kilns */
-  if(G.state==='bisque' || G.state==='glazefire'){
+  /* kiln cinematic */
+  if(inKiln){
     G.kilnT += dt;
-    const p = G.kilnT/G.kilnDur;
-    const heat = p<.75 ? p/.75 : (1-p)/.25;
-    clayMat.emissiveIntensity = clamp(heat,0,1)*1.15;
-    kilnLight.intensity = clamp(heat,0,1)*180;
-    scene.background.copy(BG).offsetHSL(0,.15,heat*.05);
-    if(p>=.72) finishKiln();
+    const t = G.kilnT;
+    // pot travels to the kiln
+    if(t<=KT.travel){
+      const k = t/KT.travel;
+      potRoot.position.lerpVectors(new THREE.Vector3(0,0,0), POT_KILN, k*k*(3-2*k));
+      potRoot.position.y += Math.sin(k*Math.PI)*6;   // gentle arc, carried by unseen hands
+    } else potRoot.position.copy(POT_KILN);
+    // door
+    let doorK = 0;
+    if(t>KT.travel && t<=KT.doorShut) doorK = (t-KT.travel)/(KT.doorShut-KT.travel);
+    else if(t>KT.doorShut && t<=KT.heatEnd) doorK = 1;
+    else if(t>KT.heatEnd && t<=KT.doorOpen) doorK = 1-(t-KT.heatEnd)/(KT.doorOpen-KT.heatEnd);
+    kilnDoor.position.y = lerp(DOOR_OPEN_Y, DOOR_CLOSED_Y, doorK);
+    if(!G._doorSfx && doorK>=1){ G._doorSfx=true; AudioEng.thud(); }
+    // heat
+    const heatK = clamp((t-KT.doorShut)/(KT.heatEnd-KT.doorShut),0,1);
+    const heat = Math.sin(heatK*Math.PI);
+    clayMat.emissiveIntensity = heat*1.2;
+    kilnLight.intensity = heat*160 + (doorK<1? heat*60:0);
+    peephole.material.opacity = doorK*heat;
+    AudioEng.rumble(.4+heat*.6);
+    // kiln trembles at peak heat
+    kilnG.position.copy(KILN_POS);
+    if(heat>.6){ kilnG.position.x += rnd(-.06,.06)*heat; kilnG.position.z += rnd(-.06,.06)*heat; }
+    // reveal
+    if(t>KT.heatEnd && !G.kilnApplied){
+      G.kilnApplied=true;
+      burstSparks();
+      AudioEng.creak();
+      applyKilnOutcome();
+    }
+    if(t>=KT.done){
+      G._doorSfx=false;
+      AudioEng.rumble(0);
+      $('vignette').style.opacity=0;
+      clayMat.emissiveIntensity=0; kilnLight.intensity=0;
+      kilnG.position.copy(KILN_POS);
+      if(G.kilnKind==='bisque' && G.kilnOutcome!=='shatter') toGlazeDip();
+      else { G.state='result'; showScreen('resultScreen'); }
+    }
   }
 
   if(pot.collapsed && pot.slump<1) pot.slump = Math.min(1, pot.slump+dt*1.6);
 
-  /* shards physics */
+  /* shards */
   for(let s=shards.length-1;s>=0;s--){
     const m=shards[s];
     m.userData.life-=dt;
@@ -1322,7 +1790,7 @@ function tick(now){
     m.rotation.x+=m.userData.w.x*dt; m.rotation.y+=m.userData.w.y*dt; m.rotation.z+=m.userData.w.z*dt;
   }
 
-  /* splatter */
+  /* particles */
   {
     const arr = splatGeo.attributes.position.array;
     splats.forEach((sp,i)=>{
@@ -1334,16 +1802,45 @@ function tick(now){
     });
     splatGeo.attributes.position.needsUpdate=true;
   }
+  {
+    const arr = wispGeo.attributes.position.array;
+    wisps.forEach((w,i)=>{
+      if(w.life>0){ w.life-=dt; w.p.y+=dt*2.2; w.p.x+=dt*.4; if(w.life<=0) w.p.set(0,-99,0); }
+      arr[i*3]=w.p.x; arr[i*3+1]=w.p.y; arr[i*3+2]=w.p.z;
+    });
+    wispGeo.attributes.position.needsUpdate=true;
+  }
+  {
+    const arr = sparkGeo.attributes.position.array;
+    sparks.forEach((s,i)=>{
+      if(s.life>0){ s.life-=dt; s.v.y-=14*dt; s.p.addScaledVector(s.v,dt); if(s.life<=0) s.p.set(0,-99,0); }
+      arr[i*3]=s.p.x; arr[i*3+1]=s.p.y; arr[i*3+2]=s.p.z;
+    });
+    sparkGeo.attributes.position.needsUpdate=true;
+  }
+  {
+    const arr = moteGeo.attributes.position.array;
+    motes.forEach((m,i)=>{
+      m.p.addScaledVector(m.v, dt);
+      if(m.p.x>2||m.p.y<1) m.p.set(rnd(-34,-8), rnd(14,28), rnd(-36,-4));
+      arr[i*3]=m.p.x; arr[i*3+1]=m.p.y; arr[i*3+2]=m.p.z;
+    });
+    moteGeo.attributes.position.needsUpdate=true;
+  }
 
   wheel.rotation.y = spin;
+
+  /* eased camera rig + sway + wobble shake */
+  const camEase = 1-Math.exp(-dt*2.8);
+  camPos.lerp(camPosT, camEase);
+  camLook.lerp(camLookT, camEase);
   const swayOn = SET.sway!=='off';
   const shake = pot.wobAmp*.12;
   camera.position.set(
-    camBase.x + (swayOn? Math.sin(now*.0006)*.6:0) + rnd(-shake,shake),
-    camBase.y + (swayOn? Math.cos(now*.0004)*.4:0) + rnd(-shake,shake),
-    camBase.z);
-  const lookY = G.state==='glazeDip'? 11 : clamp(pot.h*.55,7,13);
-  camera.lookAt(0, lookY, 0);
+    camPos.x + (swayOn? Math.sin(now*.0006)*.6:0) + rnd(-shake,shake),
+    camPos.y + (swayOn? Math.cos(now*.0004)*.4:0) + rnd(-shake,shake),
+    camPos.z);
+  camera.lookAt(tmpV.copy(camLook));
 
   if(crackSprite.visible){
     crackSprite.position.set(0, pot.y+pot.h*.5, (pot.r[Math.floor(RINGS/2)]||3)+.12);
@@ -1355,6 +1852,7 @@ function tick(now){
 }
 
 /* ---------------- boot ---------------- */
+loadShelf();
 $('firedTag').textContent = G.fired>0? `${G.fired} pieces fired in this studio` : '';
 showScreen('titleScreen');
 $('muteBtn').style.display='flex';
