@@ -54,6 +54,34 @@ shelf.
 - Settings menu (volume, graphics, clay forgiveness, camera sway), skippable intro
 - Same single-file Three.js setup — see `pottery.html`.
 
+### Audio
+
+All music and SFX are generated in-browser with WebAudio (a plucked generative
+score over Am–F–C–G plus synthesized foley), so the game ships with zero audio
+assets. To use real recordings instead, drop files into `audio/` and list them
+in `audio/manifest.json` — anything listed replaces its synthesized version,
+anything missing falls back automatically:
+
+```json
+{
+  "music":   "music.mp3",
+  "squish":  "squish.wav",
+  "scrape":  "scrape.wav",
+  "slosh":   "slosh.wav",
+  "creak":   "creak.wav",
+  "crack":   "crack.wav",
+  "shatter": "shatter.wav",
+  "thud":    "thud.wav",
+  "chime":   "chime.wav"
+}
+```
+
+Good CC0/royalty-free sources: [Kenney audio packs](https://kenney.nl/assets?q=audio)
+(CC0 — the *Impact Sounds* and *UI Audio* packs cover crack/thud/chime well),
+[FreePD](https://freepd.com) (CC0 music), [OpenGameArt](https://opengameart.org)
+(filter by CC0), and [Pixabay SFX](https://pixabay.com/sound-effects/) (check the
+per-file license). `music` should be a seamless loop; everything else is a one-shot.
+
 ## Deploy
 
 Static site — Vercel serves `index.html` directly (`outputDirectory: "."`). Pushes to

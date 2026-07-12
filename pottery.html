@@ -329,22 +329,80 @@ const AudioEng = {
     const rf = this.ctx.createBiquadFilter(); rf.type='lowpass'; rf.frequency.value=220;
     this.rumbleGain = this.ctx.createGain(); this.rumbleGain.gain.value=0;
     rs.connect(rf); rf.connect(this.rumbleGain); this.rumbleGain.connect(this.master); rs.start();
-    this.padGain = this.ctx.createGain(); this.padGain.gain.value=.045; this.padGain.connect(this.master);
-    const chords = [[196,246.9,293.7],[174.6,220,261.6]];
-    let ci=0;
-    const playChord = ()=>{
-      if(!this.ctx) return;
-      const t=this.ctx.currentTime;
-      chords[ci%2].forEach(f=>{
-        const o=this.ctx.createOscillator(); o.type='triangle'; o.frequency.value=f; o.detune.value=rnd(-6,6);
-        const g=this.ctx.createGain(); g.gain.setValueAtTime(0,t);
-        g.gain.linearRampToValueAtTime(1,t+2.5); g.gain.linearRampToValueAtTime(0,t+8);
-        o.connect(g); g.connect(this.padGain); o.start(t); o.stop(t+8.2);
-      });
-      ci++; setTimeout(playChord, 7000);
-    };
-    playChord();
+    // music bus with a feedback-delay echo (music box / kalimba space)
+    this.musicGain = this.ctx.createGain(); this.musicGain.gain.value=.5; this.musicGain.connect(this.master);
+    this.echo = this.ctx.createDelay(1); this.echo.delayTime.value=.28;
+    const fb = this.ctx.createGain(); fb.gain.value=.32;
+    const wet = this.ctx.createGain(); wet.gain.value=.4;
+    this.echo.connect(fb); fb.connect(this.echo);
+    this.echo.connect(wet); wet.connect(this.musicGain);
+    // downloaded audio (audio/manifest.json) replaces the generative score & synth SFX
+    this.loadExternal().finally(()=>{ if(!this.buf.music) this.startMusic(); });
   },
+  /* ---- optional real audio files, dropped in /audio by the studio owner ---- */
+  buf:{},
+  async loadExternal(){
+    try{
+      const man = await (await fetch('audio/manifest.json')).json();
+      for(const [k,f] of Object.entries(man)){
+        try{
+          const ab = await (await fetch('audio/'+f)).arrayBuffer();
+          this.buf[k] = await this.ctx.decodeAudioData(ab);
+        }catch(e){ /* skip files that are missing or won't decode */ }
+      }
+      if(this.buf.music){
+        const s=this.ctx.createBufferSource(); s.buffer=this.buf.music; s.loop=true;
+        const g=this.ctx.createGain(); g.gain.value=.35;
+        s.connect(g); g.connect(this.master); s.start();
+      }
+    }catch(e){ /* no manifest — fully generative audio */ }
+  },
+  playBuf(k, vol=1, rate=1){
+    if(!this.buf[k] || !this.ctx) return false;
+    const s=this.ctx.createBufferSource(); s.buffer=this.buf[k];
+    s.playbackRate.value=rate;
+    const g=this.ctx.createGain(); g.gain.value=vol;
+    s.connect(g); g.connect(this.master); s.start();
+    return true;
+  },
+  /* ---- generative studio score: slow chords, plucked pentatonic melody ---- */
+  pluck(freq, t, vol=.05, decay=1.2){
+    const o=this.ctx.createOscillator(); o.type='triangle'; o.frequency.value=freq; o.detune.value=rnd(-4,4);
+    const f=this.ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=2400;
+    const g=this.ctx.createGain();
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+.012);
+    g.gain.exponentialRampToValueAtTime(.0004,t+decay);
+    o.connect(f); f.connect(g); g.connect(this.musicGain); g.connect(this.echo);
+    o.start(t); o.stop(t+decay+.05);
+  },
+  startMusic(){
+    // Am — F — C — G, with A-minor pentatonic on top
+    const CHORDS = [
+      { bass:110.0,  tones:[220.0,261.6,329.6] },   // A
+      { bass:87.31,  tones:[174.6,220.0,261.6] },   // F
+      { bass:130.8,  tones:[261.6,329.6,392.0] },   // C
+      { bass:98.0,   tones:[196.0,246.9,293.7] },   // G
+    ];
+    const PENTA = [220.0,261.6,293.7,329.6,392.0,440.0,523.3,587.3];
+    const BAR = 3.4;
+    let bar=0;
+    const playBar = ()=>{
+      if(!this.ctx) return;
+      const t = this.ctx.currentTime + .08;
+      const ch = CHORDS[bar%CHORDS.length];
+      this.pluck(ch.bass, t, .075, 2.6);                       // soft bass root
+      if(bar%2===0) this.pluck(ch.tones[0]/2, t+BAR*.5, .04, 2);
+      const n = 2+Math.floor(rnd(3));                          // sparse melody
+      for(let i=0;i<n;i++){
+        const when = t + (Math.floor(rnd(8))/8)*BAR*.9 + .06;
+        const pool = Math.random()<.6 ? ch.tones : PENTA;
+        this.pluck(pick(pool)*(Math.random()<.25?2:1), when, .038+rnd(.02), rnd(.9,1.6));
+      }
+      bar++; this._musicT=setTimeout(playBar, BAR*1000);
+    };
+    playBar();
+  },
+  duckMusic(d){ if(this.musicGain) this.musicGain.gain.setTargetAtTime(d? .16:.5, this.ctx.currentTime, .6); },
   resume(){ if(this.ctx && this.ctx.state==='suspended') this.ctx.resume(); },
   setVol(){ if(this.master) this.master.gain.value = this.muted?0:SET.vol; },
   hum(v){ if(this.humGain) this.humGain.gain.setTargetAtTime(v*.16, this.ctx.currentTime, .1); },
@@ -368,15 +426,16 @@ const AudioEng = {
     const g=this.ctx.createGain(); g.gain.value=vol;
     s.connect(f); f.connect(g); g.connect(this.master); s.start();
   },
-  squish(){ this.noiseBurst(.09, rnd(300,600), .07); },
-  scrape(){ this.noiseBurst(.12, rnd(1400,1900), .09); },
-  slosh(){ this.noiseBurst(.22, rnd(400,700), .1); },
-  creak(){ this.noiseBurst(.3, rnd(180,260), .12); this.blip(70,.25,'triangle',.08); },
-  crack(){ this.noiseBurst(.05, rnd(2200,3400), .22); this.blip(90,.12,'square',.1); },
-  shatter(){ for(let i=0;i<7;i++) setTimeout(()=>this.crack(), i*rnd(20,70)); this.blip(55,.5,'sine',.22); },
-  thud(){ this.blip(58,.3,'sine',.28); this.noiseBurst(.18,220,.16); },
+  squish(){ if(this.playBuf('squish',.5,rnd(.85,1.15))) return; this.noiseBurst(.09, rnd(300,600), .07); },
+  scrape(){ if(this.playBuf('scrape',.5,rnd(.9,1.1))) return; this.noiseBurst(.12, rnd(1400,1900), .09); },
+  slosh(){ if(this.playBuf('slosh',.55,rnd(.9,1.1))) return; this.noiseBurst(.22, rnd(400,700), .1); },
+  creak(){ if(this.playBuf('creak',.6)) return; this.noiseBurst(.3, rnd(180,260), .12); this.blip(70,.25,'triangle',.08); },
+  crack(){ if(this.playBuf('crack',.7,rnd(.9,1.1))) return; this.noiseBurst(.05, rnd(2200,3400), .22); this.blip(90,.12,'square',.1); },
+  shatter(){ if(this.playBuf('shatter',.8)) return; for(let i=0;i<7;i++) setTimeout(()=>this.crack(), i*rnd(20,70)); this.blip(55,.5,'sine',.22); },
+  thud(){ if(this.playBuf('thud',.7)) return; this.blip(58,.3,'sine',.28); this.noiseBurst(.18,220,.16); },
   camera(){ this.blip(1800,.05,'square',.09); this.blip(900,.08,'square',.06); },
   chime(good=1){
+    if(this.playBuf('chime',.6,good>1.05?1.12:1)) return;
     const notes = good>1.05 ? [523,659,784,1047,1319] : good>0 ? [523,659,784] : [392,311];
     notes.forEach((f,i)=> setTimeout(()=>this.blip(f,.35,'triangle',.13), i*110));
   },
@@ -1506,6 +1565,7 @@ function startKiln(kind){
   pot.wobAmp=0; pot.instab=0; pot.shock.fill(0);
   banner(kind==='bisque'?'INTO THE BISQUE…':'THE GLAZE FIRE…', 2.2);
   AudioEng.hum(0); AudioEng.warn(0); AudioEng.rumble(1); AudioEng.creak();
+  AudioEng.duckMusic(true);
   setCam(-4,10,20, -20,7,-8);
   kilnLight.position.copy(KILN_POS).add(new THREE.Vector3(0,8,4));
   $('vignette').style.opacity=1;
@@ -1960,6 +2020,7 @@ function tick(now){
     if(t>=KT.done){
       G._doorSfx=false;
       AudioEng.rumble(0);
+      AudioEng.duckMusic(false);
       $('vignette').style.opacity=0;
       clayMat.emissiveIntensity=0; kilnLight.intensity=0;
       kilnG.position.copy(KILN_POS);
