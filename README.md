@@ -41,6 +41,10 @@ shelf.
 
 - Pick what to make (cup/bowl/vase/jug/amphora or freeform) — a guide silhouette
   appears on the wheel and your sketch match is scored
+- Optional **commissions** on the noticeboard: deliver the right form (and glaze)
+  above a match threshold for coin
+- **Carve** decoration at leather-hard (rings/wave/chatter) · **layer glazes** with
+  multiple dips, and **wax resist** to protect covered glaze for two-tone pieces
 - **Tap** to wedge · **hold** to centre · **drag sideways** to shape · **drag up** at the rim to pull taller
 - **Sponge** re-wets (soft clay slumps) · **trim** evens walls · both kiln passes roll real risk from your shortcuts
 - A brick kiln in the corner with a full firing cinematic (door, peephole glow, spark reveal)
