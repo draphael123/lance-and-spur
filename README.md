@@ -29,6 +29,21 @@ decorate your corner of the world. Full day–night cycle with night-blooming li
 - **WASD** walk · **drag** to look · **E** talk · **F** gather · **1–4** select item · **Q** place
 - Same single-file Three.js setup as the main game — see `glade.html`.
 
+## Mud & Ember (prototype)
+
+A **free-build pottery studio** with the full production pipeline lives at
+[`/pottery`](https://lance-and-spur.vercel.app/pottery). Mobile-first (one-thumb
+portrait play, mouse works too): wedge the air out of the clay, centre it on the
+wheel, throw a pot with drag gestures — thin walls wobble and collapse, and the
+clay dries while you fuss — trim at leather-hard, survive the bisque fire, dip it
+in glaze, then gamble everything on the glaze fire. Survivors go on the studio
+shelf.
+
+- **Tap** to wedge · **hold** to centre · **drag sideways** to shape · **drag up** at the rim to pull taller
+- **Sponge** re-wets (soft clay slumps) · **trim** evens walls · both kiln passes roll real risk from your shortcuts
+- Settings menu (volume, graphics, clay forgiveness, camera sway), skippable intro
+- Same single-file Three.js setup — see `pottery.html`.
+
 ## Deploy
 
 Static site — Vercel serves `index.html` directly (`outputDirectory: "."`). Pushes to
